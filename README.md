@@ -530,10 +530,10 @@ MIT License - see LICENSE file for details.
 If you use CNTE in your research, please cite:
 
 ```bibtex
-@software{cnte2025,
+@software{cnte2026,
   title={CNTE: Cisco Network Troubleshooting Environment},
   author={Ashkan Kazemi, Cisco AI SPG},
-  year={2025},
+  year={2026},
   url={https://github.com/cisco-open/cisco-network-troubleshooting-environment}
 }
 ```

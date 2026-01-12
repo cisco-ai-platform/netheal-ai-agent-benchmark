@@ -1,3 +1,7 @@
+// Copyright 2026 Cisco Systems, Inc. and its affiliates
+//
+// SPDX-License-Identifier: Apache-2.0
+
 // NetHeal Web Demo frontend (vanilla JS)
 // Interacts with FastAPI backend endpoints to drive the RL environment.
 
