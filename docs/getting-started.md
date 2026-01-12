@@ -1,6 +1,6 @@
 # Getting Started
 
-This guide gets you running quickly with NetHeal for Python experiments.
+This guide gets you running quickly with CNTE for Python experiments.
 
 ## Install
 

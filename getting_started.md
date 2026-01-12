@@ -1,4 +1,4 @@
-# NetHeal: Getting Started Guide
+# CNTE: Getting Started Guide
 
 > Note: This guide has moved. See the canonical docs:
 > - `docs/getting-started.md` (quickstart)
@@ -6,11 +6,11 @@
 > - `docs/webapp.md` (Web App)
 > - `docs/guides/training-sb3.md` (training)
 
-**NetHeal** is a reinforcement learning environment designed to train AI agents to systematically troubleshoot and "heal" network problems. This guide will get you up to speed quickly on the project architecture, core concepts, and how to use it effectively.
+**CNTE** (Cisco Network Troubleshooting Environment) is a reinforcement learning environment designed to train AI agents to systematically troubleshoot and "heal" network problems. This guide will get you up to speed quickly on the project architecture, core concepts, and how to use it effectively.
 
-## 🎯 **What is NetHeal?**
+## 🎯 **What is CNTE?**
 
-NetHeal simulates realistic network troubleshooting scenarios where an RL agent must:
+CNTE simulates realistic network troubleshooting scenarios where an RL agent must:
 1. **Discover** the network topology through exploration.
 2. **Diagnose** problems using a variety of network tools (ping, traceroute, etc.).
 3. **Make an accurate final diagnosis** to "heal" the network.
@@ -77,7 +77,7 @@ Actions are organized into 3 categories:
 3.  **Final Diagnosis**: Terminal actions to diagnose the fault (e.g., `device_failure`, `link_failure`).
 
 ### **Reward System** (How the agent learns)
-NetHeal uses a sparse, dynamic reward system:
+CNTE uses a sparse, dynamic reward system:
 
 - **Step Penalty**: A small penalty (`-0.1`) for every action to encourage efficiency.
 - **Dynamic Final Diagnosis**: The reward for a correct or incorrect diagnosis is scaled based on the network size. This means that solving larger, more complex networks yields a proportionally larger reward (or penalty), providing a better learning signal.
@@ -156,6 +156,6 @@ See README.md for advanced usage examples including custom network topologies, f
 
 ---
 
-**NetHeal** provides a rich, realistic environment for training AI agents to become expert network troubleshooters. The combination of graph-aware observations, a structured action space, and a sparse reward system creates a challenging and realistic testbed for developing intelligent network operations systems.
+**CNTE** provides a rich, realistic environment for training AI agents to become expert network troubleshooters. The combination of graph-aware observations, a structured action space, and a sparse reward system creates a challenging and realistic testbed for developing intelligent network operations systems.
 
 Happy troubleshooting! 🚀

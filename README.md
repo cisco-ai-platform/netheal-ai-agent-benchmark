@@ -1,6 +1,6 @@
-# NetHeal: A Network Troubleshooting Environment for Training RL Agents
+# CNTE: Cisco Network Troubleshooting Environment
 
-NetHeal is a reinforcement learning environment for training agents to systematically troubleshoot network problems through topology discovery and diagnostic testing.
+CNTE (Cisco Network Troubleshooting Environment) is a reinforcement learning environment for training agents to systematically troubleshoot network problems through topology discovery and diagnostic testing.
 
 ## Documentation
 
@@ -13,7 +13,7 @@ NetHeal is a reinforcement learning environment for training agents to systemati
 
 ## Overview
 
-NetHeal provides a comprehensive simulation environment where RL agents learn to diagnose network faults using realistic troubleshooting methodologies. The environment features graph-aware observations, a structured action space, and a sparse reward system that encourages efficient, outcome-focused problem-solving.
+CNTE provides a comprehensive simulation environment where RL agents learn to diagnose network faults using realistic troubleshooting methodologies. The environment features graph-aware observations, a structured action space, and a sparse reward system that encourages efficient, outcome-focused problem-solving.
 
 ### Key Capabilities
 
@@ -126,7 +126,7 @@ env.close()
 
 ## Web Demo (FastAPI)
 
-An interactive web UI is included to showcase NetHeal episodes, hints, actions, and live observations.
+An interactive web UI is included to showcase CNTE episodes, hints, actions, and live observations.
 
 ### Run the Web Backend
 
@@ -172,16 +172,16 @@ pytest tests/test_web_api.py -q
 
 ## AAA Protocol Integration (Agent-to-Agent Assessment)
 
-NetHeal follows the AAA (Agentified Agent Assessment) format for standardized agent-to-agent evaluation. It provides a **green agent** (evaluator) that orchestrates assessments and exposes diagnostic tools to **purple agents** (solvers) via MCP.
+CNTE follows the AAA (Agentified Agent Assessment) format for standardized agent-to-agent evaluation. It provides a **green agent** (evaluator) that orchestrates assessments and exposes diagnostic tools to **purple agents** (solvers) via MCP.
 
 ### Quick Start with Docker
 
 ```bash
 # Build the Docker image
-docker build --platform linux/amd64 -t netheal-green-agent .
+docker build --platform linux/amd64 -t cnte-green-agent .
 
 # Run the green agent
-docker run -p 9020:9020 netheal-green-agent \
+docker run -p 9020:9020 cnte-green-agent \
   --host 0.0.0.0 --port 9020 --card-url http://localhost:9020
 
 # Test the agent card
@@ -403,7 +403,7 @@ The environment provides a structured observation as a dictionary containing the
 
 ## Reward System
 
-NetHeal uses a sparse, dynamic reward system to encourage efficient and accurate troubleshooting. The reward is scaled based on the complexity of the network to provide a more calibrated learning signal.
+CNTE uses a sparse, dynamic reward system to encourage efficient and accurate troubleshooting. The reward is scaled based on the complexity of the network to provide a more calibrated learning signal.
 
 - **Step Penalty**: A small, constant penalty (`-0.1`) is applied for every action taken. This incentivizes the agent to solve the problem in the fewest steps possible.
 - **Dynamic Final Diagnosis**: The reward for the final diagnosis is scaled based on the number of devices in the network. A correct diagnosis yields a positive reward, while an incorrect one yields a penalty. This ensures that solving more complex problems is appropriately incentivized.
@@ -515,7 +515,7 @@ pytest tests/test_environment.py -v
 
 ## Research Applications
 
-NetHeal is designed for research in:
+CNTE is designed for research in:
 - **Network Troubleshooting Automation**: Training agents to systematically diagnose network faults
 - **Reinforcement Learning**: Graph-aware RL with structured action spaces
 - **Network Operations**: Developing AI-assisted network management tools
@@ -527,13 +527,13 @@ MIT License - see LICENSE file for details.
 
 ## Citation
 
-If you use NetHeal in your research, please cite:
+If you use CNTE in your research, please cite:
 
 ```bibtex
-@software{netheal2025,
-  title={NetHeal: Advanced RL Network Troubleshooting Environment},
+@software{cnte2025,
+  title={CNTE: Cisco Network Troubleshooting Environment},
   author={Ashkan Kazemi, Cisco AI SPG},
   year={2025},
-  url={https://github.com/your-repo/netheal}
+  url={https://github.com/cisco-open/cisco-network-troubleshooting-environment}
 }
 ```

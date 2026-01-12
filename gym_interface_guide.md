@@ -1,10 +1,10 @@
-# NetHeal Gymnasium Interface Guide for RL Training
+# CNTE Gymnasium Interface Guide for RL Training
 
 > Note: This material is consolidated in the canonical docs:
 > - `docs/reference/environment.md` (Environment API)
 > - `docs/guides/training-sb3.md` (Training with SB3)
 
-This guide provides comprehensive documentation for using NetHeal's Gymnasium-compatible interface to train reinforcement learning agents for network troubleshooting. NetHeal implements the standard OpenAI Gymnasium API, making it compatible with popular RL libraries like Stable Baselines3, Ray RLlib, and custom training loops.
+This guide provides comprehensive documentation for using CNTE's Gymnasium-compatible interface to train reinforcement learning agents for network troubleshooting. CNTE implements the standard OpenAI Gymnasium API, making it compatible with popular RL libraries like Stable Baselines3, Ray RLlib, and custom training loops.
 
 ## Table of Contents
 
@@ -21,7 +21,7 @@ This guide provides comprehensive documentation for using NetHeal's Gymnasium-co
 
 ## Environment Overview
 
-NetHeal's `NetworkTroubleshootingEnv` is a Gymnasium-compatible environment that simulates realistic network troubleshooting scenarios. Agents learn to:
+CNTE's `NetworkTroubleshootingEnv` is a Gymnasium-compatible environment that simulates realistic network troubleshooting scenarios. Agents learn to:
 
 - **Discover network topology** through systematic exploration.
 - **Diagnose network faults** using realistic diagnostic tools.

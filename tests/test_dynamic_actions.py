@@ -1,3 +1,7 @@
+# Copyright 2026 Cisco Systems, Inc. and its affiliates
+#
+# SPDX-License-Identifier: Apache-2.0
+
 """Regression tests for dynamic action space rebuild and action unlocking.
 
 These tests ensure that after a topology scan on star and hierarchical

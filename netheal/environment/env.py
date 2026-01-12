@@ -1,3 +1,7 @@
+# Copyright 2026 Cisco Systems, Inc. and its affiliates
+#
+# SPDX-License-Identifier: Apache-2.0
+
 """Enhanced RL environment for network troubleshooting simulation.
 
 This module provides the NetworkTroubleshootingEnv class that implements
