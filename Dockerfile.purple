@@ -1,0 +1,38 @@
+# NetHeal Purple Agent - AAA Protocol Solver
+#
+# Build:
+#   docker build --platform linux/amd64 -f Dockerfile.purple -t netheal-purple-agent .
+#
+# Run (dummy solver):
+#   docker run -p 9030:9030 netheal-purple-agent \
+#     --host 0.0.0.0 --port 9030 --card-url http://localhost:9030 --solver dummy
+#
+# Run (GPT solver):
+#   docker run -p 9030:9030 \
+#     -e AZURE_OPENAI_ENDPOINT=https://your-resource.openai.azure.com/ \
+#     -e AZURE_OPENAI_API_KEY=your-key \
+#     -e AZURE_OPENAI_DEPLOYMENT=gpt-4 \
+#     netheal-purple-agent --host 0.0.0.0 --port 9030 --card-url http://localhost:9030 --solver gpt
+
+FROM python:3.11-slim
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY netheal/ ./netheal/
+
+ENV PYTHONPATH=/app
+ENV PYTHONUNBUFFERED=1
+
+EXPOSE 9030
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:9030/.well-known/agent.json')" || exit 1
+
+ENTRYPOINT ["python", "-m", "netheal.aaa.purple_server"]
+CMD ["--host", "0.0.0.0", "--port", "9030", "--solver", "dummy"]

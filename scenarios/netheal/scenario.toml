@@ -1,0 +1,34 @@
+# NetHeal AgentBeats Scenario Definition
+#
+# This file defines the assessment scenario for AgentBeats platform.
+# For local testing, use `image` instead of `agentbeats_id`.
+# For platform submissions, replace with registered agent IDs from agentbeats.dev.
+#
+# Usage:
+#   Local:  python generate_compose.py --scenario scenarios/netheal/scenario.toml
+#   GitHub: Triggered automatically via Actions workflow
+
+[green_agent]
+# For local testing, use image:
+image = "netheal-green-agent:latest"
+# For AgentBeats platform, use agentbeats_id instead:
+# agentbeats_id = "YOUR-GREEN-AGENT-UUID"
+env = { AZURE_OPENAI_API_KEY = "${AZURE_OPENAI_API_KEY}", AZURE_OPENAI_ENDPOINT = "${AZURE_OPENAI_ENDPOINT}", AZURE_OPENAI_DEPLOYMENT = "${AZURE_OPENAI_DEPLOYMENT}" }
+
+[[participants]]
+# For local testing, use image:
+image = "netheal-purple-agent:latest"
+# For AgentBeats platform, use agentbeats_id instead:
+# agentbeats_id = "YOUR-PURPLE-AGENT-UUID"
+name = "netheal-solver"
+env = { AZURE_OPENAI_API_KEY = "${AZURE_OPENAI_API_KEY}", AZURE_OPENAI_ENDPOINT = "${AZURE_OPENAI_ENDPOINT}", AZURE_OPENAI_DEPLOYMENT = "${AZURE_OPENAI_DEPLOYMENT}" }
+
+[config]
+# Assessment configuration
+num_episodes = 5
+max_devices = 8
+max_episode_steps = 200
+topology_types = ["star", "mesh", "hierarchical"]
+timeout_seconds = 300
+seed = 1234
+enable_user_hints = true

@@ -1,0 +1,107 @@
+# macOS
+.DS_Store
+Thumbs.db
+
+# Windsurf workspace
+.windsurf/
+
+# Python bytecode and caches
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyd
+*.pdb
+*.so
+*.dylib
+
+# Packaging / distribution
+build/
+dist/
+.eggs/
+*.egg-info/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+.python-version
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Unit test / coverage
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache/
+.pytest_cache/
+pytestdebug.log
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+
+# Type checkers / linters
+.mypy_cache/
+.pyre/
+.pytype/
+.ruff_cache/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Databases / app instances
+instance/
+*.db
+*.sqlite3
+
+# Logs and local data
+logs/
+*.log
+
+# Node / front-end
+node_modules/
+bower_components/
+.npm/
+.yarn/
+.pnp.*
+.parcel-cache/
+.next/
+.nuxt/
+.vite/
+.svelte-kit/
+.tmp/
+.temp/
+coverage/
+webapp/frontend/dist/
+webapp/frontend/build/
+
+# Editors / IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.history/
+
+# Environment variables
+.env
+.env.*
+*.env
+.envrc
+
+# Generated files
+docker-compose.generated.yml
+benchmark_*.json
+
+# Cursor IDE
+.cursor/

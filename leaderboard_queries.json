@@ -1,0 +1,15 @@
+[
+  {
+    "name": "Overall Performance",
+    "query": "SELECT id, ROUND(pass_rate * 100, 1) AS \"Pass Rate %\", ROUND(composite_score, 1) AS \"Score\", ROUND(avg_steps, 1) AS \"Avg Steps\", total_episodes AS \"# Episodes\" FROM (SELECT *, ROW_NUMBER() OVER (PARTITION BY id ORDER BY pass_rate DESC, composite_score DESC) AS rn FROM (SELECT results.participants.solver AS id, res.summary.pass_rate AS pass_rate, res.summary.composite_score AS composite_score, res.summary.avg_steps AS avg_steps, res.summary.total_episodes AS total_episodes FROM results CROSS JOIN UNNEST(ARRAY[results]) AS r(res))) WHERE rn = 1 ORDER BY pass_rate DESC, composite_score DESC;"
+  },
+  {
+    "name": "Diagnosis Accuracy",
+    "query": "SELECT id, ROUND(diagnosis_rate * 100, 1) AS \"Diagnosis %\", ROUND(f1_score * 100, 1) AS \"F1 Score %\", total_episodes AS \"# Episodes\" FROM (SELECT *, ROW_NUMBER() OVER (PARTITION BY id ORDER BY diagnosis_rate DESC) AS rn FROM (SELECT results.participants.solver AS id, results.summary.diagnosis_success_rate AS diagnosis_rate, results.summary.fault_type_macro_f1 AS f1_score, results.summary.total_episodes AS total_episodes FROM results)) WHERE rn = 1 ORDER BY diagnosis_rate DESC, f1_score DESC;"
+  },
+  {
+    "name": "Efficiency Metrics",
+    "query": "SELECT id, ROUND(avg_steps, 1) AS \"Avg Steps\", ROUND(tool_cost * 100, 1) AS \"Tool Cost %\", ROUND(topology_cov * 100, 1) AS \"Coverage %\" FROM (SELECT *, ROW_NUMBER() OVER (PARTITION BY id ORDER BY avg_steps ASC) AS rn FROM (SELECT results.participants.solver AS id, results.summary.avg_steps AS avg_steps, results.summary.tool_cost_index AS tool_cost, results.summary.topology_coverage AS topology_cov FROM results)) WHERE rn = 1 ORDER BY avg_steps ASC;"
+  }
+]
+

@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>NetHeal Web Demo</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <header>
+    <h1>NetHeal Web Demo</h1>
+    <p>Interactive troubleshooting: reset episodes, pick actions, and watch observations update.</p>
+  </header>
+
+  <main>
+    <section class="controls">
+      <h2>New Episode</h2>
+      <form id="reset-form">
+        <div class="grid">
+          <label>Seed
+            <input type="number" id="seed" placeholder="optional" />
+          </label>
+          <label>Max Devices
+            <input type="number" id="max_devices" value="8" min="2" max="50" />
+          </label>
+          <label>Max Steps
+            <input type="number" id="max_steps" value="20" min="1" max="200" />
+          </label>
+          <label>Hints
+            <select id="enable_hints">
+              <option value="true" selected>Enabled</option>
+              <option value="false">Disabled</option>
+            </select>
+          </label>
+          <label>Hint Provider
+            <select id="hint_mode">
+              <option value="auto" selected>auto</option>
+              <option value="heuristic">heuristic</option>
+              <option value="azure">azure</option>
+            </select>
+          </label>
+        </div>
+        <button type="submit">Reset Episode</button>
+      </form>
+      
+      <div class="scenario-controls">
+        <h3>Scenario Management</h3>
+        <div class="button-group">
+          <button id="export-btn" class="secondary-btn">Export Scenario</button>
+          <button id="import-btn" class="secondary-btn">Import Scenario</button>
+          <input type="file" id="import-file" accept=".json" style="display: none;" />
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2>Hint</h2>
+      <div id="hint" class="hint">No hint yet.</div>
+    </section>
+
+    <section class="status">
+      <h2>Status</h2>
+      <div class="status-grid">
+        <div><strong>Step</strong>: <span id="step-count">0</span></div>
+        <div><strong>Progress</strong>: <span id="progress">0</span></div>
+        <div><strong>Network Size</strong>: <span id="network-size">0</span></div>
+        <div><strong>Discovered Devices</strong>: <span id="discovered">0</span></div>
+        <div><strong>Last Reward</strong>: <span id="last-reward">0</span></div>
+        <div><strong>Terminated</strong>: <span id="terminated">false</span></div>
+        <div><strong>Truncated</strong>: <span id="truncated">false</span></div>
+      </div>
+      <details>
+        <summary>Reward Breakdown</summary>
+        <pre id="reward-breakdown">{}</pre>
+      </details>
+      <div id="final-outcome" class="final-outcome hidden"></div>
+    </section>
+
+    <section class="actions">
+      <h2>Actions</h2>
+      <div class="filters">
+        <input id="action-search" placeholder="Search actions (type, params, device)" />
+        <select id="action-category">
+          <option value="all" selected>All categories</option>
+          <option value="topology_discovery">Topology</option>
+          <option value="diagnostic">Diagnostic</option>
+          <option value="diagnosis">Diagnosis</option>
+        </select>
+        <label><input type="checkbox" id="action-dedup" /> Deduplicate</label>
+        <span id="actions-count"></span>
+      </div>
+      <div id="actions"></div>
+    </section>
+
+    <section class="observations">
+      <h2>Observations</h2>
+      <div class="obs-grid">
+        <div>
+          <h3>Discovery Matrix</h3>
+          <div id="discovery-matrix"></div>
+        </div>
+        <div>
+          <h3>Recent Diagnostics (last 10)</h3>
+          <div id="recent-diagnostics"></div>
+        </div>
+      </div>
+      <div style="margin-top:10px">
+        <h3>Device Index Map</h3>
+        <div id="device-map"></div>
+      </div>
+      <details>
+        <summary>Raw Info</summary>
+        <pre id="raw-info">{}</pre>
+      </details>
+    </section>
+  </main>
+
+  <footer>
+    <small>NetHeal © 2025</small>
+  </footer>
+
+  <script src="/static/app.js" type="module"></script>
+</body>
+</html>

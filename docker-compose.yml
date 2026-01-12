@@ -1,0 +1,101 @@
+# NetHeal AAA Local Testing Environment
+#
+# Mirrors how AAA assessments are run with both green (evaluator) and purple (solver) agents.
+#
+# A2A Flow:
+#   1. Green agent starts and exposes POST /tasks
+#   2. User/test script calls POST /tasks on green agent with purple agent endpoint
+#   3. Green agent starts MCP server per episode
+#   4. Green agent POSTs EpisodeStart to purple agent's /tasks endpoint
+#   5. Purple agent uses MCP tools to solve and submit diagnosis
+#   6. Green agent collects results and produces final assessment
+#
+# Usage:
+#   docker-compose up --build
+#   docker-compose up -d --build
+#   docker-compose logs -f
+#
+#   # Test the assessment flow
+#   curl -X POST http://localhost:9020/tasks \
+#     -H "Content-Type: application/json" \
+#     -d '{"participants": {"purple": {"role": "purple", "endpoint": "http://purple-agent:9030"}}, "config": {"num_episodes": 1}}'
+#
+#   docker-compose down
+
+services:
+  green-agent:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      platforms:
+        - linux/amd64
+    image: netheal-green-agent:latest
+    container_name: netheal-green-agent
+    ports:
+      - "9020:9020"
+    environment:
+      - AZURE_OPENAI_ENDPOINT=${AZURE_OPENAI_ENDPOINT:-}
+      - AZURE_OPENAI_API_KEY=${AZURE_OPENAI_API_KEY:-}
+      - AZURE_OPENAI_API_VERSION=${AZURE_OPENAI_API_VERSION:-2024-02-15-preview}
+      - AZURE_OPENAI_DEPLOYMENT=${AZURE_OPENAI_DEPLOYMENT:-}
+      - PYTHONUNBUFFERED=1
+    command:
+      - "--host"
+      - "0.0.0.0"
+      - "--port"
+      - "9020"
+      - "--card-url"
+      - "http://green-agent:9020"
+    volumes:
+      - ./output:/app/output
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:9020/.well-known/agent.json')"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+    networks:
+      - netheal-network
+
+  purple-agent:
+    build:
+      context: .
+      dockerfile: Dockerfile.purple
+      platforms:
+        - linux/amd64
+    image: netheal-purple-agent:latest
+    container_name: netheal-purple-agent
+    ports:
+      - "9030:9030"
+    environment:
+      - AZURE_OPENAI_ENDPOINT=${AZURE_OPENAI_ENDPOINT:-}
+      - AZURE_OPENAI_API_KEY=${AZURE_OPENAI_API_KEY:-}
+      - AZURE_OPENAI_API_VERSION=${AZURE_OPENAI_API_VERSION:-2024-02-15-preview}
+      - AZURE_OPENAI_DEPLOYMENT=${AZURE_OPENAI_DEPLOYMENT:-}
+      - PYTHONUNBUFFERED=1
+    command:
+      - "--host"
+      - "0.0.0.0"
+      - "--port"
+      - "9030"
+      - "--card-url"
+      - "http://purple-agent:9030"
+      - "--solver"
+      - "dummy"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:9030/.well-known/agent.json')"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    depends_on:
+      green-agent:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - netheal-network
+
+networks:
+  netheal-network:
+    name: netheal-network
