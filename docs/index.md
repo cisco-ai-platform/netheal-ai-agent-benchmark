@@ -1,8 +1,8 @@
-# CNTE Documentation
+# NetHeal Documentation
 
-CNTE (Cisco Network Troubleshooting Environment) is a Gymnasium-compatible RL environment where agents discover network topology, run diagnostics, and make a final diagnosis to "heal" the network.
+NetHeal is a Gymnasium-compatible RL environment where agents discover network topology, run diagnostics, and make a final diagnosis to "heal" the network.
 
-## Try CNTE in 60 seconds (Python)
+## Try NetHeal in 60 seconds (Python)
 
 ```bash
 python -m venv venv

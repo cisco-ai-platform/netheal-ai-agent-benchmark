@@ -1,6 +1,6 @@
-# Fault Type Behaviors in CNTE
+# Fault Type Behaviors in NetHeal
 
-This document describes how each fault type manifests during a CNTE episode, including observable symptoms and diagnostic strategies.
+This document describes how each fault type manifests during a NetHeal episode, including observable symptoms and diagnostic strategies.
 
 ---
 

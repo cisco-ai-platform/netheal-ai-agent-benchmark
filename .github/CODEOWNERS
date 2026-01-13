@@ -1,6 +1,6 @@
 ####################################################
 #
-# List of approvers for CNTE project
+# List of approvers for NetHeal project
 #
 #####################################################
 #
@@ -12,8 +12,8 @@
 # the repository. Unless a later match takes precedence,
 # the following users/teams will be requested for
 # review when someone opens a pull request.
-* @cisco-open/cnte-maintainers
+* @cisco-open/netheal-maintainers
 
 # Enforces admin protections for repo configuration via probot settings app.
 # ref: https://github.com/probot/settings#security-implications
-.github/settings.yml @cisco-open/cnte-admins
+.github/settings.yml @cisco-open/netheal-admins

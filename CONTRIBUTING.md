@@ -1,6 +1,6 @@
 # How to Contribute
 
-Thanks for your interest in contributing to `CNTE` (Cisco Network Troubleshooting Environment)! Here are a few general
+Thanks for your interest in contributing to `NetHeal`! Here are a few general
 guidelines on contributing and reporting bugs that we ask you to review.
 Following these guidelines helps to communicate that you respect the time of the
 contributors managing and developing this open source project. In return, they
@@ -47,8 +47,8 @@ Instead, please see security procedures in [SECURITY.md](/SECURITY.md).**
 1. **Clone the repository:**
 
    ```bash
-   git clone https://github.com/cisco-ai-platform/cisco-network-troubleshooting-environment
-   cd cisco-network-troubleshooting-environment
+   git clone https://github.com/cisco-open/netheal-ai-agent-benchmark
+   cd netheal-ai-agent-benchmark
    ```
 
 2. **Create and activate virtual environment:**
@@ -73,7 +73,7 @@ Instead, please see security procedures in [SECURITY.md](/SECURITY.md).**
 ### Project Structure
 
 ```
-cisco-network-troubleshooting-environment/
+netheal-ai-agent-benchmark/
 ├── netheal/                # Main package
 │   ├── environment/        # RL environment components (env, actions, observations, rewards)
 │   ├── network/            # Network graph and topology generation
@@ -141,7 +141,7 @@ major version release.
 
 ## Testing
 
-CNTE uses `pytest` for testing. Tests are located in the `tests/` directory.
+NetHeal uses `pytest` for testing. Tests are located in the `tests/` directory.
 
 ### Running Tests
 
@@ -168,7 +168,7 @@ pytest -k "test_action" -v
 
 ## Other Ways to Contribute
 
-We welcome anyone that wants to contribute to `CNTE` to triage and reply to
+We welcome anyone that wants to contribute to `NetHeal` to triage and reply to
 open issues to help troubleshoot and fix existing bugs. Here is what you can do:
 
 - **Help with issue triage**: Ensure existing issues follow the recommendations
@@ -179,7 +179,7 @@ open issues to help troubleshoot and fix existing bugs. Here is what you can do:
 - **Review pull requests**: Test patches against real use cases and provide
   feedback.
 - **Write tests**: Add missing test cases to improve coverage.
-- **Share your use case**: Let us know how you're using CNTE in your research
+- **Share your use case**: Let us know how you're using NetHeal in your research
   or applications.
 
 ## Questions?
@@ -187,6 +187,6 @@ open issues to help troubleshoot and fix existing bugs. Here is what you can do:
 If you have questions about contributing, feel free to open an issue for
 discussion.
 
-Thanks again for your interest in contributing to `CNTE`!
+Thanks again for your interest in contributing to `NetHeal`!
 
 :heart:

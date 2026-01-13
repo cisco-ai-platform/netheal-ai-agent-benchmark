@@ -5,10 +5,10 @@ repository:
   # See https://developer.github.com/v3/repos/#edit for all available settings.
 
   # The name of the repository. Changing this will rename the repository
-  name: cnte
+  name: netheal-ai-agent-benchmark
 
   # A short description of the repository that will show up on GitHub
-  description: CNTE - Cisco Network Troubleshooting Environment for Training RL Agents
+  description: NetHeal - AI Agent Benchmark for Network Troubleshooting
 
   # A URL with more information about the repository
   #homepage: https://example.github.io/
@@ -69,11 +69,11 @@ repository:
 #   #   repository without access to sensitive or destructive actions.
 #   # * `triage` - Recommended for contributors who need to proactively manage
 #   #   issues and pull requests without write access.
-#   - name: cnte-admins
+#   - name: netheal-admins
 #     permission: admin
-#   - name: cnte-maintainers
+#   - name: netheal-maintainers
 #     permission: maintain
-#   - name: cnte
+#   - name: netheal
 #     permission: triage
 
 # TODO: Enable this section once repository has been created & no further modifications are needed
