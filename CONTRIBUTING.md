@@ -1,6 +1,6 @@
 # How to Contribute
 
-Thanks for your interest in contributing to `NetHeal`! Here are a few general
+Thanks for your interest in contributing to `netheal-ai-agent-benchmark`! Here are a few general
 guidelines on contributing and reporting bugs that we ask you to review.
 Following these guidelines helps to communicate that you respect the time of the
 contributors managing and developing this open source project. In return, they
@@ -141,7 +141,7 @@ major version release.
 
 ## Testing
 
-NetHeal uses `pytest` for testing. Tests are located in the `tests/` directory.
+netheal-ai-agent-benchmark uses `pytest` for testing. Tests are located in the `tests/` directory.
 
 ### Running Tests
 
@@ -168,7 +168,7 @@ pytest -k "test_action" -v
 
 ## Other Ways to Contribute
 
-We welcome anyone that wants to contribute to `NetHeal` to triage and reply to
+We welcome anyone that wants to contribute to `netheal-ai-agent-benchmark` to triage and reply to
 open issues to help troubleshoot and fix existing bugs. Here is what you can do:
 
 - **Help with issue triage**: Ensure existing issues follow the recommendations
@@ -179,7 +179,7 @@ open issues to help troubleshoot and fix existing bugs. Here is what you can do:
 - **Review pull requests**: Test patches against real use cases and provide
   feedback.
 - **Write tests**: Add missing test cases to improve coverage.
-- **Share your use case**: Let us know how you're using NetHeal in your research
+- **Share your use case**: Let us know how you're using netheal-ai-agent-benchmark in your research
   or applications.
 
 ## Questions?
@@ -187,6 +187,6 @@ open issues to help troubleshoot and fix existing bugs. Here is what you can do:
 If you have questions about contributing, feel free to open an issue for
 discussion.
 
-Thanks again for your interest in contributing to `NetHeal`!
+Thanks again for your interest in contributing to `netheal-ai-agent-benchmark`!
 
 :heart:
