@@ -103,6 +103,9 @@ def generate_compose(scenario: Dict[str, Any], output_path: str = "docker-compos
     # Green agent service
     green_env = build_env_section(green_agent.get("env", {}))
     green_env["PYTHONUNBUFFERED"] = "1"
+    # MCP server needs to bind to all interfaces and advertise with Docker hostname
+    green_env["MCP_SERVER_HOST"] = "0.0.0.0"
+    green_env["MCP_SERVER_ADVERTISED_HOST"] = "green-agent"
     
     services["green-agent"] = {
         "image": green_image,

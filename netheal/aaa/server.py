@@ -25,7 +25,7 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Dict, List, Optional
 
 LOGGER = logging.getLogger(__name__)
 OUTPUT_DIR = Path(os.environ.get("OUTPUT_DIR", "/app/output"))
@@ -33,6 +33,7 @@ OUTPUT_DIR = Path(os.environ.get("OUTPUT_DIR", "/app/output"))
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel
 from sse_starlette.sse import EventSourceResponse
 
 from netheal.aaa.green_agent import NetHealGreenAgent
@@ -63,17 +64,46 @@ def set_card_url(url: str) -> None:
 
 
 def _build_agent_card() -> Dict[str, object]:
-    """Construct the agent capability card."""
+    """Construct the agent capability card per A2A specification."""
     card = {
+        # Required A2A fields
         "name": "netheal-green-agent",
+        "description": "NetHeal RL environment orchestrator for network troubleshooting assessment. "
+                       "Implements the AAA (Agentified Agent Assessment) protocol as a green agent "
+                       "(evaluator) that creates diagnostic scenarios and scores solver agents.",
         "version": "0.1.0",
-        "description": "NetHeal RL environment orchestrator with MCP tool support.",
+        # A2A capabilities
         "capabilities": {
-            "accepts_tasks": True,
-            "streams_updates": True,
-            "supports_mcp": True,
+            "streaming": True,  # Supports SSE streaming
+            "pushNotifications": False,
+            "stateTransitionHistory": True,
         },
-        "contact": {"repo": "https://github.com/cisco-aispg/netheal-rl-env"},
+        # A2A skills (what tasks this agent can handle)
+        "skills": [
+            {
+                "id": "network-troubleshooting-assessment",
+                "name": "Network Troubleshooting Assessment",
+                "description": "Evaluate solver agents on network fault diagnosis tasks",
+                "tags": ["assessment", "evaluation", "network", "troubleshooting", "rl"],
+                "examples": [
+                    "Run a 5-episode assessment with star topology networks",
+                    "Evaluate solver agent on device failure scenarios",
+                ],
+            }
+        ],
+        # Default modes
+        "defaultInputModes": ["application/json"],
+        "defaultOutputModes": ["application/json", "text/event-stream"],
+        # Protocol support
+        "protocols": {
+            "a2a": "1.0",
+            "mcp": "1.0",
+        },
+        # Contact info
+        "provider": {
+            "organization": "Cisco AI SPG",
+            "url": "https://github.com/cisco-aispg/netheal-rl-env",
+        },
     }
     if _CARD_URL:
         card["url"] = _CARD_URL
@@ -158,6 +188,77 @@ async def stream_updates(task_id: str) -> EventSourceResponse:
             yield _sse_payload("update", update)
 
     return EventSourceResponse(event_generator())
+
+
+class SolverEvent(BaseModel):
+    """Event from purple agent solver."""
+    type: str
+    turn: Optional[int] = None
+    content: Optional[str] = None
+    reasoning: Optional[str] = None
+    tools: Optional[List[Dict]] = None
+    tool_name: Optional[str] = None
+    tool_args: Optional[Dict] = None
+    result: Optional[Dict] = None
+    success: Optional[bool] = None
+    has_tool_calls: Optional[bool] = None
+    completed_by: Optional[str] = None
+    total_turns: Optional[int] = None
+    max_turns: Optional[int] = None
+
+
+@app.post("/tasks/{task_id}/solver_event")
+async def receive_solver_event(task_id: str, event: SolverEvent) -> Dict[str, str]:
+    """Receive solver event from purple agent and emit via SSE."""
+    # Find the task - solver events may use the episode task ID (with _ep suffix)
+    record = None
+    base_task_id = task_id.rsplit("_ep", 1)[0] if "_ep" in task_id else task_id
+    
+    # Try exact match first, then base task ID
+    for tid in [task_id, base_task_id]:
+        record = TASKS.get(tid)
+        if record:
+            break
+    
+    if not record:
+        # Don't error - the task might have completed
+        return {"status": "ignored", "reason": "task_not_found"}
+    
+    # Convert solver event to task update
+    event_data = event.model_dump(exclude_none=True)
+    event_type = event.type
+    
+    # Format message based on event type
+    if event_type == "turn_start":
+        message = f"Purple agent: Turn {event.turn}/{event.max_turns}"
+    elif event_type == "llm_response":
+        content_preview = (event.content or "")[:100]
+        message = f"Purple agent reasoning: {content_preview}..."
+    elif event_type == "tool_calls":
+        tool_names = [t["name"] for t in (event.tools or [])]
+        message = f"Purple agent calling: {', '.join(tool_names)}"
+    elif event_type == "tool_result":
+        status = "✓" if event.success else "✗"
+        message = f"Purple agent: {event.tool_name} {status}"
+    elif event_type == "task_complete":
+        message = f"Purple agent completed via {event.completed_by}"
+    elif event_type == "assistant_message":
+        content_preview = (event.content or "")[:100]
+        message = f"Purple agent: {content_preview}"
+    else:
+        message = f"Purple agent event: {event_type}"
+    
+    update = TaskUpdate(
+        task_id=record.request.task_id or base_task_id,
+        message=message,
+        level=TaskUpdateLevel.INFO,
+        payload={"solver_event": event_data},
+    )
+    
+    record.updates.append(update)
+    await record.update_queue.put(update)
+    
+    return {"status": "received"}
 
 
 def _require_task(task_id: str) -> TaskRecord:

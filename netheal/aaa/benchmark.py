@@ -172,7 +172,7 @@ async def run_single_episode(
                     "objective": (
                         f"Identify the fault type and location within {max_steps} tool calls. "
                         "Call submit_diagnosis(fault_type, location) with your answer. "
-                        "Each tool call (except get_state) consumes one step from your budget."
+                        "Each tool call (except list_actions) consumes one step from your budget."
                     ),
                     "fault_types": ["device_failure", "link_failure", "misconfiguration", "performance_degradation"],
                 }

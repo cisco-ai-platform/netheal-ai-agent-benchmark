@@ -29,6 +29,11 @@ def test_health():
 
 
 def test_state_before_reset_returns_400():
+    # Reset the singleton's internal state to test uninitialized behavior
+    from webapp.backend.app.manager import EnvManager
+    mgr = EnvManager()
+    mgr._env = None  # Clear any previously initialized environment
+    
     r = client.get("/api/env/state")
     assert r.status_code == 400
 

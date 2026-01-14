@@ -44,3 +44,8 @@ Open http://127.0.0.1:8000/ and use the UI to reset an episode, choose actions, 
 - REST API Reference: ./reference/web-api.md
 - Examples: ./examples.md
 - FAQ: ./faq.md
+
+## AAA Protocol & AgentBeats
+
+- [Running Assessments](./tutorials/running-assessments.md) – Run NetHeal assessments with Docker
+- [Architecture Overview](./explanation/architecture.md) – AAA protocol flow and component design

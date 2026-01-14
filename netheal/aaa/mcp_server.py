@@ -29,6 +29,7 @@ from typing import Any, Callable, Dict, List, Optional
 
 import uvicorn
 from mcp.server.fastmcp import FastMCP
+from mcp.server.transport_security import TransportSecuritySettings
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
@@ -74,13 +75,29 @@ class NetHealMCPServer:
         host: str = "127.0.0.1",
         port: Optional[int] = None,
         log_level: str = "warning",
+        advertised_host: Optional[str] = None,
+        on_tool_call: Optional[Callable[[Dict[str, Any]], None]] = None,
     ) -> None:
         self.runtime = runtime
         self.host = host
         self.port = port or self._reserve_ephemeral_port(host)
         self.log_level = log_level
+        # For Docker networking: bind to 0.0.0.0 but advertise as container hostname
+        self.advertised_host = advertised_host or host
+        # Callback for tool call notifications (for SSE streaming)
+        self._on_tool_call = on_tool_call
 
-        self._mcp = FastMCP(name="netheal-mcp")
+        # Configure transport security for Docker networking
+        # Allow connections from the advertised host (e.g., green-agent:PORT)
+        transport_security = TransportSecuritySettings(
+            enable_dns_rebinding_protection=True,
+            allowed_hosts=[
+                f"{self.advertised_host}:*",  # Allow any port on advertised host
+                "localhost:*",
+                "127.0.0.1:*",
+            ],
+        )
+        self._mcp = FastMCP(name="netheal-mcp", transport_security=transport_security)
         self._uvicorn: Optional[uvicorn.Server] = None
         self._thread: Optional[threading.Thread] = None
         self._lock = asyncio.Lock()
@@ -92,12 +109,12 @@ class NetHealMCPServer:
     @property
     def base_url(self) -> str:
         """MCP protocol endpoint."""
-        return f"http://{self.host}:{self.port}/mcp"
+        return f"http://{self.advertised_host}:{self.port}/mcp"
 
     @property
     def http_helper_url(self) -> str:
         """HTTP helper endpoint base URL."""
-        return f"http://{self.host}:{self.port}"
+        return f"http://{self.advertised_host}:{self.port}"
 
     def start(self, timeout: float = 5.0) -> None:
         """Start server in background thread."""
@@ -128,10 +145,6 @@ class NetHealMCPServer:
     def _register_mcp_tools(self) -> None:
         """Register diagnostic tools with FastMCP."""
 
-        @self._mcp.tool(name="get_state", description="Get current observation and episode info.")
-        async def tool_get_state() -> Dict[str, Any]:
-            return self._state_snapshot()
-
         @self._mcp.tool(name="list_actions", description="List valid actions for discovered devices.")
         async def tool_list_actions() -> Dict[str, Any]:
             return self._valid_actions_payload()
@@ -142,6 +155,8 @@ class NetHealMCPServer:
                 predicate=lambda spec: spec.category == ActionCategory.TOPOLOGY_DISCOVERY
                 and spec.action_type == TopologyAction.SCAN_NETWORK,
                 error_message="Network scan action unavailable.",
+                tool_name="scan_network",
+                tool_params={},
             )
 
         @self._mcp.tool(name="discover_neighbors", description="Find neighbors of a device.")
@@ -151,15 +166,17 @@ class NetHealMCPServer:
                 and spec.action_type == TopologyAction.DISCOVER_NEIGHBORS
                 and spec.parameters.get("device") == device,
                 error_message=f"No discover_neighbors action for '{device}'.",
+                tool_name="discover_neighbors",
+                tool_params={"device": device},
             )
 
         @self._mcp.tool(name="ping", description="Test connectivity between two devices.")
         async def tool_ping(source: str, destination: str) -> Dict[str, Any]:
-            return await self._diagnostic_action(DiagnosticAction.PING, source, destination)
+            return await self._diagnostic_action(DiagnosticAction.PING, source, destination, tool_name="ping")
 
         @self._mcp.tool(name="traceroute", description="Trace path between two devices.")
         async def tool_traceroute(source: str, destination: str) -> Dict[str, Any]:
-            return await self._diagnostic_action(DiagnosticAction.TRACEROUTE, source, destination)
+            return await self._diagnostic_action(DiagnosticAction.TRACEROUTE, source, destination, tool_name="traceroute")
 
         @self._mcp.tool(name="check_status", description="Check device operational status.")
         async def tool_check_status(device: str) -> Dict[str, Any]:
@@ -168,6 +185,8 @@ class NetHealMCPServer:
                 and spec.action_type == DiagnosticAction.CHECK_STATUS
                 and spec.parameters.get("device") == device,
                 error_message=f"No check_status action for '{device}'.",
+                tool_name="check_status",
+                tool_params={"device": device},
             )
 
         @self._mcp.tool(name="check_interfaces", description="Inspect device network interfaces.")
@@ -177,6 +196,8 @@ class NetHealMCPServer:
                 and spec.action_type == DiagnosticAction.CHECK_INTERFACES
                 and spec.parameters.get("device") == device,
                 error_message=f"No check_interfaces action for '{device}'.",
+                tool_name="check_interfaces",
+                tool_params={"device": device},
             )
 
         @self._mcp.tool(
@@ -198,6 +219,8 @@ class NetHealMCPServer:
                 and spec.action_type == fault_enum
                 and spec.parameters.get("location") == location,
                 error_message=f"No diagnosis action for {fault_type} at {location}.",
+                tool_name="submit_diagnosis",
+                tool_params={"fault_type": fault_type, "location": location},
             )
 
             if "error" not in result:
@@ -212,11 +235,6 @@ class NetHealMCPServer:
         async def http_list_tools(request: Request) -> JSONResponse:
             tools = {
                 "tools": [
-                    {
-                        "name": "get_state",
-                        "description": "Get current observation and episode info.",
-                        "parameters": {"type": "object", "properties": {}, "required": []},
-                    },
                     {
                         "name": "list_actions",
                         "description": "List valid actions for discovered devices.",
@@ -296,10 +314,6 @@ class NetHealMCPServer:
                 ]
             }
             return JSONResponse(tools)
-
-        @self._mcp.custom_route("/state", methods=["GET"], name="get_state")
-        async def http_state(request: Request) -> JSONResponse:
-            return JSONResponse(self._state_snapshot())
 
         @self._mcp.custom_route("/actions", methods=["GET"], name="get_actions")
         async def http_actions(request: Request) -> JSONResponse:
@@ -392,33 +406,6 @@ class NetHealMCPServer:
 
             return JSONResponse(result)
 
-    def _state_snapshot(self) -> Dict[str, Any]:
-        """Build current state as JSON-safe dict."""
-        info = self.runtime.info or {}
-        env = self.runtime.env
-
-        current_step = getattr(env, "current_step", None)
-        if current_step is None:
-            current_step = info.get("episode_step", 0)
-
-        max_steps = getattr(env, "max_episode_steps", None)
-        if max_steps is None and hasattr(env, "env"):
-            max_steps = getattr(env.env, "max_episode_steps", 25)
-
-        remaining_steps = (max_steps - current_step) if max_steps else None
-
-        return {
-            "observation": _serialize(self.runtime.observation),
-            "info": _serialize(info),
-            "diagnosis_submitted": self._diagnosis_submitted,
-            "step_budget": {
-                "current_step": current_step,
-                "max_steps": max_steps,
-                "remaining_steps": remaining_steps,
-                "warning": "LOW STEPS - submit diagnosis soon!" if remaining_steps and remaining_steps <= 5 else None,
-            },
-        }
-
     def _valid_actions_payload(self) -> Dict[str, Any]:
         """Build valid actions as JSON-safe dict."""
         env = self.runtime.env
@@ -443,6 +430,8 @@ class NetHealMCPServer:
         self,
         predicate: Callable[[ActionSpec], bool],
         error_message: str,
+        tool_name: str = "",
+        tool_params: Optional[Dict] = None,
     ) -> Dict[str, Any]:
         """Execute first action matching the predicate."""
         env = self.runtime.env
@@ -451,7 +440,7 @@ class NetHealMCPServer:
 
         for idx in valid_indices:
             if 0 <= idx < len(specs) and predicate(specs[idx]):
-                return await self._step_env(idx)
+                return await self._step_env(idx, tool_name=tool_name, tool_params=tool_params)
 
         return {"error": error_message}
 
@@ -460,6 +449,7 @@ class NetHealMCPServer:
         action_type: DiagnosticAction,
         source: str,
         destination: str,
+        tool_name: str = "",
     ) -> Dict[str, Any]:
         """Execute a source-destination diagnostic action."""
         return await self._execute_by_predicate(
@@ -468,20 +458,51 @@ class NetHealMCPServer:
             and spec.parameters.get("source") == source
             and spec.parameters.get("destination") == destination,
             error_message=f"No {action_type.value} action for {source} -> {destination}.",
+            tool_name=tool_name,
+            tool_params={"source": source, "destination": destination},
         )
 
-    async def _step_env(self, action_idx: int) -> Dict[str, Any]:
+    async def _step_env(
+        self, action_idx: int, tool_name: str = "", tool_params: Optional[Dict] = None
+    ) -> Dict[str, Any]:
         """Step environment and update runtime state."""
-        obs, reward, terminated, truncated, info = self.runtime.env.step(action_idx)
+        env = self.runtime.env
+        
+        # Get action spec for logging
+        specs = env.action_specs
+        action_spec = specs[action_idx] if 0 <= action_idx < len(specs) else None
+        
+        obs, reward, terminated, truncated, info = env.step(action_idx)
         self.runtime.observation = obs
         self.runtime.info = info
-        return {
+        
+        # Sanitize info to remove ground truth - prevent leakage to solver
+        sanitized_info = _sanitize_info_for_solver(info)
+        
+        result = {
             "observation": _serialize(obs),
             "reward": float(reward),
             "terminated": bool(terminated),
             "truncated": bool(truncated),
-            "info": _serialize(info),
+            "info": _serialize(sanitized_info),
         }
+        
+        # Notify callback about tool execution
+        if self._on_tool_call:
+            tool_event = {
+                "tool_name": tool_name,
+                "tool_params": tool_params or {},
+                "action_type": action_spec.action_type.value if action_spec and hasattr(action_spec.action_type, "value") else str(action_spec.action_type) if action_spec else "unknown",
+                "reward": float(reward),
+                "terminated": terminated,
+                "step": getattr(env, "current_step", None) or info.get("episode_step", 0),
+            }
+            try:
+                self._on_tool_call(tool_event)
+            except Exception as e:
+                LOGGER.warning("Tool call callback failed: %s", e)
+        
+        return result
 
     def _wait_until_serving(self, timeout: float) -> None:
         """Wait for server to accept connections."""
@@ -500,6 +521,27 @@ class NetHealMCPServer:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
             sock.bind((host, 0))
             return sock.getsockname()[1]
+
+
+def _sanitize_info_for_solver(info: Dict[str, Any]) -> Dict[str, Any]:
+    """Remove sensitive information from info dict before sending to solver.
+    
+    This prevents ground truth leakage to the purple agent.
+    """
+    if not info:
+        return {}
+    
+    # Keys that should NEVER be sent to the solver
+    FORBIDDEN_KEYS = {
+        "ground_truth_fault",
+        "ground_truth",
+        "fault_info",
+        "injected_fault",
+        "correct_diagnosis",
+        "answer",
+    }
+    
+    return {k: v for k, v in info.items() if k not in FORBIDDEN_KEYS}
 
 
 def _serialize(obj: Any) -> Any:

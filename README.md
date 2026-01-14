@@ -10,6 +10,7 @@ NetHeal is a reinforcement learning environment for training agents to systemati
 - Web App Guide: `docs/webapp.md`
 - Training (SB3): `docs/guides/training-sb3.md`
 - REST API: `docs/reference/web-api.md`
+- Running Assessments: `docs/tutorials/running-assessments.md`
 
 ## Overview
 
@@ -523,7 +524,7 @@ NetHeal is designed for research in:
 
 ## License
 
-MIT License - see LICENSE file for details.
+Apache 2.0 License - see LICENSE file for details.
 
 ## Citation
 

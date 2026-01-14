@@ -9,6 +9,7 @@ Implements the AAA protocol for solver agents:
     GET  /.well-known/agent.json - Agent capability card
     POST /tasks                  - Receive episode from green agent
     GET  /tasks/{id}             - Task status
+    GET  /tasks/{id}/stream      - SSE stream for LLM trace events
 
 When green agent POSTs an EpisodeStart, this agent:
     1. Connects to the MCP server URL provided
@@ -22,12 +23,13 @@ Usage:
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 import httpx
 import typer
@@ -37,6 +39,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
+from sse_starlette.sse import EventSourceResponse
 
 LOGGER = logging.getLogger("netheal.purple_server")
 logging.basicConfig(
@@ -87,6 +90,12 @@ class TaskRecord:
     created_at: datetime = field(default_factory=datetime.utcnow)
     completed_at: Optional[datetime] = None
     runner: Optional[asyncio.Task] = None
+    # Event queue for SSE streaming
+    event_queue: asyncio.Queue = field(default_factory=asyncio.Queue)
+    # Store events for replay if stream connects late
+    event_history: List[Dict[str, Any]] = field(default_factory=list)
+    # System prompt used for this task
+    system_prompt: Optional[str] = None
 
 
 TASKS: Dict[str, TaskRecord] = {}
@@ -94,16 +103,47 @@ TASKS: Dict[str, TaskRecord] = {}
 
 @app.get("/.well-known/agent.json")
 async def agent_card() -> JSONResponse:
-    """Return the agent capability card."""
+    """Return the agent capability card per A2A specification."""
     card = {
+        # Required A2A fields
         "name": "netheal-purple-agent",
+        "description": "NetHeal solver agent (purple agent) for network troubleshooting. "
+                       "Uses diagnostic tools via MCP to identify network faults and submit diagnoses.",
         "version": "0.1.0",
-        "description": "NetHeal solver agent for network troubleshooting.",
+        # A2A capabilities
         "capabilities": {
-            "accepts_tasks": True,
-            "solver_type": _SOLVER_TYPE,
+            "streaming": True,  # Supports SSE streaming for solver traces
+            "pushNotifications": False,
+            "stateTransitionHistory": True,
         },
-        "contact": {"repo": "https://github.com/cisco-aispg/netheal-rl-env"},
+        # A2A skills
+        "skills": [
+            {
+                "id": "network-fault-diagnosis",
+                "name": "Network Fault Diagnosis",
+                "description": "Diagnose network faults using diagnostic tools",
+                "tags": ["solver", "diagnosis", "network", "troubleshooting"],
+                "examples": [
+                    "Diagnose device failure in a star topology",
+                    "Identify link failure between routers",
+                ],
+            }
+        ],
+        # Default modes
+        "defaultInputModes": ["application/json"],
+        "defaultOutputModes": ["application/json", "text/event-stream"],
+        # Solver configuration
+        "solverType": _SOLVER_TYPE,
+        # Protocol support
+        "protocols": {
+            "a2a": "1.0",
+            "mcp": "1.0",
+        },
+        # Provider info
+        "provider": {
+            "organization": "Cisco AI SPG",
+            "url": "https://github.com/cisco-aispg/netheal-rl-env",
+        },
     }
     if _CARD_URL:
         card["url"] = _CARD_URL
@@ -124,6 +164,23 @@ async def create_task(payload: EpisodeRequest) -> Dict[str, Any]:
         status=TaskStatus.PENDING,
     )
     TASKS[task_id] = record
+    
+    # Emit A2A received event
+    a2a_received_event = {
+        "type": "a2a_received",
+        "task_id": task_id,
+        "from": "green_agent",
+        "message_type": "EpisodeStart",
+        "episode_index": payload.episode_start.get("episode_index", 0),
+        "hint": payload.episode_start.get("hint", ""),
+        "max_steps": payload.episode_start.get("max_steps", 25),
+        "mcp_server_url": payload.episode_start.get("mcp_server_url", ""),
+        "timestamp": datetime.utcnow().isoformat(),
+    }
+    record.event_history.append(a2a_received_event)
+    await record.event_queue.put(a2a_received_event)
+    
+    LOGGER.info("A2A: Received EpisodeStart from green agent for task %s", task_id)
 
     record.runner = asyncio.create_task(_run_solver(record))
 
@@ -150,6 +207,64 @@ async def get_task(task_id: str) -> Dict[str, Any]:
     }
 
 
+@app.get("/tasks/{task_id}/stream")
+async def stream_task(task_id: str):
+    """Stream LLM trace events via SSE."""
+    record = TASKS.get(task_id)
+    if not record:
+        raise HTTPException(status_code=404, detail="Task not found.")
+    
+    async def event_generator():
+        # First, replay any events from history for late-joining clients
+        for event in record.event_history:
+            yield {
+                "event": event.get("type", "trace"),
+                "data": json.dumps(event),
+            }
+        
+        # Then stream new events in real-time
+        while True:
+            # Check if task is complete
+            if record.status in (TaskStatus.COMPLETED, TaskStatus.FAILED):
+                # Drain remaining events
+                while not record.event_queue.empty():
+                    try:
+                        event = record.event_queue.get_nowait()
+                        yield {
+                            "event": event.get("type", "trace"),
+                            "data": json.dumps(event),
+                        }
+                    except asyncio.QueueEmpty:
+                        break
+                
+                # Send completion event
+                yield {
+                    "event": "complete",
+                    "data": json.dumps({
+                        "type": "complete",
+                        "status": record.status.value,
+                        "result": record.result,
+                    }),
+                }
+                return
+            
+            # Wait for new events
+            try:
+                event = await asyncio.wait_for(record.event_queue.get(), timeout=1.0)
+                yield {
+                    "event": event.get("type", "trace"),
+                    "data": json.dumps(event),
+                }
+            except asyncio.TimeoutError:
+                # Send keepalive ping
+                yield {
+                    "event": "ping",
+                    "data": json.dumps({"type": "ping", "status": record.status.value}),
+                }
+    
+    return EventSourceResponse(event_generator(), ping=15)
+
+
 async def _run_solver(record: TaskRecord) -> None:
     """Execute the solver."""
     record.status = TaskStatus.RUNNING
@@ -167,7 +282,7 @@ async def _run_solver(record: TaskRecord) -> None:
 
     try:
         if _SOLVER_TYPE == "gpt":
-            result = await _run_gpt_solver(mcp_url, episode)
+            result = await _run_gpt_solver(mcp_url, episode, record.task_id, record)
         else:
             result = await _run_dummy_solver(mcp_url, episode)
 
@@ -217,18 +332,103 @@ async def _run_dummy_solver(mcp_url: str, episode: Dict[str, Any]) -> Dict[str, 
         return {"error": "No diagnosis actions available"}
 
 
-async def _run_gpt_solver(mcp_url: str, episode: Dict[str, Any]) -> Dict[str, Any]:
+async def _run_gpt_solver(mcp_url: str, episode: Dict[str, Any], task_id: str = "", record: Optional[TaskRecord] = None) -> Dict[str, Any]:
     """GPT-powered solver."""
-    from netheal.aaa.gpt_agent import GPTAgent
+    from netheal.aaa.gpt_agent import GPTAgent, SYSTEM_PROMPT
+    import os
 
     max_turns = episode.get("max_steps", 20)
-
-    agent = GPTAgent(mcp_url=mcp_url, max_turns=max_turns, verbose=True)
-    result = await agent.run(
-        task_hint=episode.get("hint"),
-        task_context=episode,
-    )
-    return result
+    
+    # Get green agent URL for event forwarding (still forward to green agent for its dashboard)
+    green_agent_url = os.environ.get("GREEN_AGENT_URL", "http://green-agent:9020")
+    
+    # Store system prompt in record for display
+    if record:
+        record.system_prompt = SYSTEM_PROMPT
+        # Emit system prompt event
+        system_event = {
+            "type": "system_prompt",
+            "content": SYSTEM_PROMPT,
+            "timestamp": datetime.utcnow().isoformat(),
+        }
+        record.event_history.append(system_event)
+        await record.event_queue.put(system_event)
+    
+    # Create event forwarder callback
+    forward_queue: asyncio.Queue = asyncio.Queue()
+    
+    def on_event(event: Dict[str, Any]) -> None:
+        """Queue event for async forwarding and local streaming."""
+        event["timestamp"] = datetime.utcnow().isoformat()
+        
+        # Add to local task record for SSE streaming
+        if record:
+            record.event_history.append(event)
+            try:
+                record.event_queue.put_nowait(event)
+            except asyncio.QueueFull:
+                LOGGER.warning("Local event queue full, dropping event")
+        
+        # Also queue for forwarding to green agent
+        try:
+            forward_queue.put_nowait(event)
+        except asyncio.QueueFull:
+            LOGGER.warning("Forward queue full, dropping event")
+    
+    async def forward_events():
+        """Forward events from queue to green agent."""
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            while True:
+                try:
+                    event = await asyncio.wait_for(forward_queue.get(), timeout=0.1)
+                    try:
+                        await client.post(
+                            f"{green_agent_url}/tasks/{task_id}/solver_event",
+                            json=event,
+                        )
+                    except httpx.HTTPError as e:
+                        LOGGER.debug("Failed to forward event: %s", e)
+                except asyncio.TimeoutError:
+                    pass
+                except asyncio.CancelledError:
+                    # Forward remaining events before exiting
+                    while not forward_queue.empty():
+                        try:
+                            event = forward_queue.get_nowait()
+                            await client.post(
+                                f"{green_agent_url}/tasks/{task_id}/solver_event",
+                                json=event,
+                            )
+                        except:
+                            pass
+                    break
+    
+    # Start event forwarder task
+    forwarder = asyncio.create_task(forward_events())
+    
+    try:
+        # Get reasoning effort from env (for GPT-5, o3, o4-mini reasoning models)
+        reasoning_effort = os.environ.get("REASONING_EFFORT", "medium")
+        
+        agent = GPTAgent(
+            mcp_url=mcp_url, 
+            max_turns=max_turns, 
+            verbose=True, 
+            on_event=on_event,
+            reasoning_effort=reasoning_effort,
+        )
+        result = await agent.run(
+            task_hint=episode.get("hint"),
+            task_context=episode,
+        )
+        return result
+    finally:
+        # Stop forwarder
+        forwarder.cancel()
+        try:
+            await forwarder
+        except asyncio.CancelledError:
+            pass
 
 
 async def _execute_action(client: httpx.AsyncClient, action: Dict[str, Any]) -> Dict[str, Any]:

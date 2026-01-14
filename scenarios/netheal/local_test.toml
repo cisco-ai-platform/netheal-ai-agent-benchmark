@@ -1,0 +1,25 @@
+# Local Test Scenario - Uses dummy solver (no API keys required)
+#
+# Usage:
+#   python generate_compose.py --scenario scenarios/netheal/local_test.toml
+#   mkdir -p output
+#   docker compose -f docker-compose.generated.yml up --abort-on-container-exit
+
+[green_agent]
+image = "netheal-green-agent:latest"
+env = {}
+
+[[participants]]
+image = "netheal-purple-agent:latest"
+name = "dummy-solver"
+solver = "dummy"
+env = {}
+
+[config]
+num_episodes = 2
+max_devices = 5
+max_episode_steps = 15
+topology_types = ["star", "mesh"]
+timeout_seconds = 60
+seed = 42
+enable_user_hints = true

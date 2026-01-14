@@ -172,11 +172,10 @@ class TestMCPProtocol:
                     tools = await session.list_tools()
 
                     tool_names = [t.name for t in tools.tools]
-                    assert "get_state" in tool_names
                     assert "scan_network" in tool_names
                     assert "ping" in tool_names
                     assert "submit_diagnosis" in tool_names
-                    assert len(tool_names) == 9
+                    assert len(tool_names) == 8
 
         asyncio.run(_test())
 
@@ -245,18 +244,6 @@ class TestHTTPEndpoints:
         tool_names = [t["name"] for t in data["tools"]]
         assert "scan_network" in tool_names
         assert "submit_diagnosis" in tool_names
-
-    def test_http_get_state(self, running_server):
-        """Test GET /state endpoint."""
-        server, _ = running_server
-
-        response = httpx.get(f"{server.http_helper_url}/state")
-        assert response.status_code == 200
-
-        data = response.json()
-        assert "observation" in data
-        assert "info" in data
-        assert "diagnosis_submitted" in data
 
     def test_http_get_actions(self, running_server):
         """Test GET /actions endpoint."""

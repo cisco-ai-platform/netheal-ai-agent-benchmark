@@ -21,7 +21,8 @@ image = "netheal-purple-agent:latest"
 # For AgentBeats platform, use agentbeats_id instead:
 # agentbeats_id = "YOUR-PURPLE-AGENT-UUID"
 name = "netheal-solver"
-env = { AZURE_OPENAI_API_KEY = "${AZURE_OPENAI_API_KEY}", AZURE_OPENAI_ENDPOINT = "${AZURE_OPENAI_ENDPOINT}", AZURE_OPENAI_DEPLOYMENT = "${AZURE_OPENAI_DEPLOYMENT}" }
+solver = "gpt"  # Options: "gpt" (requires Azure OpenAI), "dummy" (random baseline)
+env = { AZURE_OPENAI_API_KEY = "${AZURE_OPENAI_API_KEY}", AZURE_OPENAI_ENDPOINT = "${AZURE_OPENAI_ENDPOINT}", AZURE_OPENAI_DEPLOYMENT = "${AZURE_OPENAI_DEPLOYMENT}", AZURE_OPENAI_API_VERSION = "${AZURE_OPENAI_API_VERSION}" }
 
 [config]
 # Assessment configuration

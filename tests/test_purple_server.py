@@ -73,7 +73,7 @@ class TestPurpleAgentCard:
         assert "name" in card
         assert card["name"] == "netheal-purple-agent"
         assert "capabilities" in card
-        assert card["capabilities"]["accepts_tasks"] is True
+        assert card["capabilities"]["streaming"] is True
         assert "url" in card
 
     def test_agent_card_has_solver_type(self, running_purple_server):
@@ -83,8 +83,8 @@ class TestPurpleAgentCard:
         response = httpx.get(f"{base_url}/.well-known/agent.json")
         card = response.json()
 
-        assert "capabilities" in card
-        assert "solver_type" in card["capabilities"]
+        # Solver type is now a top-level field per A2A spec
+        assert "solverType" in card
 
 
 class TestPurpleTaskEndpoints:

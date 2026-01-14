@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 from dataclasses import dataclass
 from typing import Any, Awaitable, Callable, Dict, Optional
 
@@ -150,25 +151,55 @@ class NetHealGreenAgent:
         observation, info = wrapped.reset(seed=seed)
         runtime = EpisodeRuntime(env=wrapped, observation=observation, info=info)
 
-        mcp_server = NetHealMCPServer(runtime)
+        # Support Docker networking: bind to 0.0.0.0, advertise with container hostname
+        mcp_host = os.environ.get("MCP_SERVER_HOST", "127.0.0.1")
+        mcp_advertised_host = os.environ.get("MCP_SERVER_ADVERTISED_HOST", mcp_host)
+        
+        # Create callback for tool call notifications
+        tool_call_queue: asyncio.Queue = asyncio.Queue()
+        
+        def on_tool_call(event: Dict[str, Any]) -> None:
+            """Callback invoked when MCP server executes a tool."""
+            try:
+                tool_call_queue.put_nowait(event)
+            except asyncio.QueueFull:
+                LOGGER.warning("Tool call queue full, dropping event")
+        
+        mcp_server = NetHealMCPServer(
+            runtime, 
+            host=mcp_host, 
+            advertised_host=mcp_advertised_host,
+            on_tool_call=on_tool_call,
+        )
         try:
             mcp_server.start()
         except Exception as exc:
             LOGGER.exception("Failed to start MCP server: %s", exc)
             return EpisodeOutcome(metrics=None, error=str(exc))
 
-        episode_start = self._build_episode_start(episode_index, runtime, mcp_server)
+        # Build episode_start WITH ground_truth for dashboard visualization
+        episode_start_for_dashboard = self._build_episode_start(
+            episode_index, runtime, mcp_server, include_ground_truth=True
+        )
+        
+        # Build episode_start WITHOUT ground_truth for purple agent (no leakage!)
+        episode_start_for_solver = self._build_episode_start(
+            episode_index, runtime, mcp_server, include_ground_truth=False
+        )
 
         await self._emit_update(
             message="MCP server ready for episode.",
-            payload={"episode_start": episode_start.model_dump()},
+            payload={"episode_start": episode_start_for_dashboard.model_dump()},
         )
 
-        await self._notify_purple_agents(episode_start)
+        await self._notify_purple_agents(episode_start_for_solver)
 
         try:
             metrics = await self._wait_for_completion(
-                wrapped, timeout=self.config.timeout_seconds
+                wrapped, 
+                timeout=self.config.timeout_seconds,
+                tool_call_queue=tool_call_queue,
+                episode_index=episode_index,
             )
             if metrics is None:
                 await self._emit_update(
@@ -206,13 +237,30 @@ class NetHealGreenAgent:
         self,
         wrapped_env: MetricsCollectorWrapper,
         timeout: float,
+        tool_call_queue: Optional[asyncio.Queue] = None,
+        episode_index: int = 0,
     ) -> Optional[EpisodeMetrics]:
-        """Poll until episode finishes or timeout elapses."""
+        """Poll until episode finishes or timeout elapses, emitting tool call events."""
         loop = asyncio.get_running_loop()
         deadline = loop.time() + timeout
-        poll_interval = 0.5
+        poll_interval = 0.1  # Faster polling for more responsive updates
 
         while loop.time() < deadline:
+            # Process any pending tool call events
+            if tool_call_queue:
+                while not tool_call_queue.empty():
+                    try:
+                        tool_event = tool_call_queue.get_nowait()
+                        await self._emit_update(
+                            message=f"Tool call: {tool_event.get('tool_name', 'unknown')}",
+                            payload={
+                                "episode_index": episode_index,
+                                "tool_call": tool_event,
+                            },
+                        )
+                    except asyncio.QueueEmpty:
+                        break
+            
             metrics = wrapped_env.last_episode_metrics
             if metrics is not None:
                 return metrics
@@ -237,16 +285,50 @@ class NetHealGreenAgent:
 
                 endpoint = str(participant.endpoint).rstrip("/")
                 tasks_url = f"{endpoint}/tasks"
+                
+                # Build the A2A request payload
+                a2a_request = {
+                    "task_id": f"{self._task_id}_ep{episode_start.episode_index}",
+                    "episode_start": episode_start.model_dump(mode="json"),
+                }
+                
+                # Emit A2A request event for dashboard visibility
+                await self._emit_update(
+                    message=f"A2A: Sending EpisodeStart to {role}",
+                    payload={
+                        "a2a_message": {
+                            "type": "request",
+                            "direction": "green_to_purple",
+                            "endpoint": tasks_url,
+                            "method": "POST",
+                            "body": a2a_request,
+                        }
+                    },
+                )
 
                 try:
                     LOGGER.info("Notifying purple agent %s at %s", role, tasks_url)
-                    response = await client.post(
-                        tasks_url,
-                        json={
-                            "task_id": f"{self._task_id}_ep{episode_start.episode_index}",
-                            "episode_start": episode_start.model_dump(),
+                    response = await client.post(tasks_url, json=a2a_request)
+                    
+                    # Emit A2A response event
+                    response_data = None
+                    try:
+                        response_data = response.json()
+                    except:
+                        response_data = {"raw": response.text[:500]}
+                    
+                    await self._emit_update(
+                        message=f"A2A: Response from {role} (HTTP {response.status_code})",
+                        payload={
+                            "a2a_message": {
+                                "type": "response",
+                                "direction": "purple_to_green",
+                                "status_code": response.status_code,
+                                "body": response_data,
+                            }
                         },
                     )
+                    
                     if response.status_code < 400:
                         LOGGER.info("Purple agent %s acknowledged episode.", role)
                     else:
@@ -261,6 +343,17 @@ class NetHealGreenAgent:
                         "Failed to notify purple agent %s: %s (continuing anyway)",
                         role,
                         exc,
+                    )
+                    await self._emit_update(
+                        message=f"A2A: Failed to reach {role}",
+                        level=TaskUpdateLevel.WARNING,
+                        payload={
+                            "a2a_message": {
+                                "type": "error",
+                                "direction": "green_to_purple",
+                                "error": str(exc),
+                            }
+                        },
                     )
 
     async def _emit_update(
@@ -286,9 +379,28 @@ class NetHealGreenAgent:
         episode_index: int,
         runtime: EpisodeRuntime,
         server: NetHealMCPServer,
+        include_ground_truth: bool = False,
     ) -> EpisodeStart:
-        """Construct the EpisodeStart message for purple agents."""
+        """Construct the EpisodeStart message.
+        
+        Args:
+            include_ground_truth: If True, include ground truth in extra dict.
+                Should be False when sending to purple agent (solver),
+                True when emitting to dashboard for visualization.
+        """
         info = runtime.info or {}
+        
+        # Build extra dict - only include ground_truth for dashboard, NOT for purple agent
+        extra_data = {
+            "http_helper_url": server.http_helper_url,
+            "tools_endpoint": f"{server.http_helper_url}/tools",
+            "mcp_url": server.base_url,
+        }
+        
+        # Only include ground truth for internal use (dashboard), never sent to solver
+        if include_ground_truth:
+            extra_data["ground_truth"] = info.get("ground_truth_fault")
+        
         return EpisodeStart(
             episode_index=episode_index,
             total_episodes=self.config.num_episodes,
@@ -306,14 +418,9 @@ class NetHealGreenAgent:
             objective=(
                 f"Identify the fault type and location within {self.config.max_episode_steps} tool calls. "
                 "Call submit_diagnosis(fault_type, location) with your answer. "
-                "Each tool call (except get_state) consumes one step from your budget."
+                "Each tool call (except list_actions) consumes one step from your budget."
             ),
-            extra={
-                "ground_truth": info.get("ground_truth_fault"),
-                "http_helper_url": server.http_helper_url,
-                "tools_endpoint": f"{server.http_helper_url}/tools",
-                "mcp_url": server.base_url,
-            },
+            extra=extra_data,
         )
 
     def _seed_for_episode(self, episode_index: int) -> Optional[int]:
