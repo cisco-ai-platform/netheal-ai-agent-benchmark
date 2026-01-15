@@ -67,6 +67,7 @@ def build_aaa_payload(
             "composite_score": summary.get("composite_episode_score", 0.0),
             "diagnosis_success_rate": summary.get("diagnosis_success_rate", 0.0),
             "fault_type_macro_f1": summary.get("fault_type_macro_f1", 0.0),
+            "avg_steps": summary.get("avg_steps", 0.0),
             "normalized_steps": summary.get("normalized_steps", 0.0),
             "tool_cost_index": summary.get("tool_cost_index", 0.0),
             "topology_coverage": summary.get("topology_coverage", 0.0),

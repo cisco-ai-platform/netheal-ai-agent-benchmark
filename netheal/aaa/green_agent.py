@@ -444,7 +444,16 @@ class NetHealGreenAgent:
     def _purple_agent_identifier(self) -> str:
         participant = self.assessment.participants.get(self.purple_role)
         if participant:
-            return participant.endpoint
+            return str(participant.endpoint)
+
+        desired_roles = {self.purple_role, f"{self.purple_role}_agent"}
+        for candidate in self.assessment.participants.values():
+            if candidate.role in desired_roles:
+                return str(candidate.endpoint)
+
+        if len(self.assessment.participants) == 1:
+            return str(next(iter(self.assessment.participants.values())).endpoint)
+
         return f"{self.purple_role}_agent"
 
 

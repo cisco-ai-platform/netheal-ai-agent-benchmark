@@ -25,12 +25,6 @@ import uvicorn
 
 from netheal.aaa import server as server_module
 
-app = typer.Typer(
-    name="netheal-green-agent",
-    help="NetHeal Green Agent A2A Server",
-    add_completion=False,
-)
-
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
@@ -38,7 +32,6 @@ logging.basicConfig(
 LOGGER = logging.getLogger("netheal.aaa.cli")
 
 
-@app.command()
 def serve(
     host: str = typer.Option(
         "0.0.0.0",
@@ -97,7 +90,7 @@ def serve(
 
 def main() -> None:
     """CLI entry point."""
-    app()
+    typer.run(serve)
 
 
 if __name__ == "__main__":

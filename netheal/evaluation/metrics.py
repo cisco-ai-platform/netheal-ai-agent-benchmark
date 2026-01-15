@@ -140,6 +140,7 @@ class CompetitionEvaluator:
             [1.0 if m.diagnosis_success else 0.0 for m in self.episodes]
         )
         avg_normalized_steps = _weighted_avg([m.normalized_steps for m in self.episodes])
+        avg_steps = _weighted_avg([float(m.steps) for m in self.episodes])
         avg_tool_cost = _weighted_avg([m.tool_cost_normalized for m in self.episodes])
         avg_topology_coverage = _weighted_avg([m.topology_coverage for m in self.episodes])
         avg_evidence = _weighted_avg([m.evidence_sufficiency for m in self.episodes])
@@ -154,6 +155,7 @@ class CompetitionEvaluator:
             "episodes": len(self.episodes),
             "diagnosis_success_rate": diagnosis_success_rate,
             "fault_type_macro_f1": macro_f1,
+            "avg_steps": avg_steps,
             "normalized_steps": avg_normalized_steps,
             "composite_episode_score": avg_composite,
             "tool_cost_index": avg_tool_cost,

@@ -466,14 +466,6 @@ async def _execute_action(client: httpx.AsyncClient, action: Dict[str, Any]) -> 
     return response.json()
 
 
-cli = typer.Typer(
-    name="netheal-purple-agent",
-    help="NetHeal Purple Agent A2A Server",
-    add_completion=False,
-)
-
-
-@cli.command()
 def serve(
     host: str = typer.Option("0.0.0.0", "--host", help="Host address."),
     port: int = typer.Option(9030, "--port", help="Port number."),
@@ -497,7 +489,7 @@ def serve(
 
 
 def main() -> None:
-    cli()
+    typer.run(serve)
 
 
 if __name__ == "__main__":

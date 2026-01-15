@@ -13,7 +13,7 @@ for local testing of AgentBeats assessments.
 Usage:
     pip install tomli tomli-w requests
     python generate_compose.py --scenario scenarios/netheal/scenario.toml
-    cp .env.example .env  # Edit with your secrets
+    # Optional: create .env with your secrets
     mkdir -p output
     docker compose up --abort-on-container-exit
 
@@ -221,7 +221,7 @@ def generate_compose(scenario: Dict[str, Any], output_path: str = "docker-compos
     for ep in participant_endpoints:
         print(f"  {ep['name']}: {ep['endpoint']}")
     print(f"\nUsage:")
-    print(f"  cp .env.example .env  # Add your secrets")
+    print(f"  # Optional: create .env with your secrets")
     print(f"  mkdir -p output")
     print(f"  docker compose -f {output_path} up --abort-on-container-exit")
 

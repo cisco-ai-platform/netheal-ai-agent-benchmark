@@ -41,11 +41,15 @@ docker build -f Dockerfile.purple -t netheal-purple-agent:latest .
 
 ### 2. Configure Environment
 
-Copy and edit the environment file with your Azure OpenAI credentials:
+Optionally create a `.env` file with your Azure OpenAI credentials (leave blank to use heuristic hints):
 
 ```bash
-cp .env.example .env
-# Edit .env with your credentials
+cat > .env <<'EOF'
+AZURE_OPENAI_ENDPOINT=
+AZURE_OPENAI_API_KEY=
+AZURE_OPENAI_API_VERSION=2024-02-15-preview
+AZURE_OPENAI_DEPLOYMENT=
+EOF
 ```
 
 ### 3. Generate Docker Compose
