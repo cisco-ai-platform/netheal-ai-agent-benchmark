@@ -34,6 +34,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from dotenv import load_dotenv
+import httpx
 from mcp import ClientSession
 from mcp.client.streamable_http import streamablehttp_client
 try:
@@ -107,6 +108,63 @@ class LLMToolCall:
     call_id: str
     name: str
     arguments: Dict[str, Any]
+
+
+@dataclass
+class HttpToolSpec:
+    name: str
+    description: str
+    inputSchema: Dict[str, Any]
+
+
+@dataclass
+class HttpToolListResult:
+    tools: List[HttpToolSpec]
+
+
+@dataclass
+class HttpToolContent:
+    data: Dict[str, Any]
+
+
+@dataclass
+class HttpToolResult:
+    content: List[HttpToolContent]
+
+
+class HttpToolSession:
+    """HTTP fallback session that mirrors the MCP client interface."""
+
+    def __init__(self, base_url: str, client: httpx.AsyncClient) -> None:
+        self._base_url = base_url.rstrip("/")
+        self._client = client
+
+    async def initialize(self) -> None:
+        return None
+
+    async def list_tools(self) -> HttpToolListResult:
+        response = await self._client.get("/tools")
+        response.raise_for_status()
+        payload = response.json() or {}
+        tools: List[HttpToolSpec] = []
+        for tool in payload.get("tools", []):
+            if not isinstance(tool, dict):
+                continue
+            tools.append(
+                HttpToolSpec(
+                    name=str(tool.get("name", "")),
+                    description=str(tool.get("description", "")),
+                    inputSchema=tool.get("parameters")
+                    or {"type": "object", "properties": {}, "required": []},
+                )
+            )
+        return HttpToolListResult(tools=tools)
+
+    async def call_tool(self, name: str, args: Dict[str, Any]) -> HttpToolResult:
+        response = await self._client.post(f"/tools/{name}", params=args or {})
+        response.raise_for_status()
+        data = response.json() or {}
+        return HttpToolResult(content=[HttpToolContent(data=data)])
 
 
 @dataclass
@@ -312,6 +370,46 @@ class GPTAgent:
             except Exception as e:
                 LOGGER.warning("Event callback failed: %s", e)
 
+    async def _load_tools(self, session: Any, source: str) -> bool:
+        tools_result = await session.list_tools()
+        self.tools = []
+        for tool in tools_result.tools:
+            self.mcp_tools[tool.name] = tool
+            openai_func = _mcp_tool_to_openai_function(tool)
+            self.tools.append(openai_func)
+            LOGGER.info("  Discovered tool: %s", tool.name)
+
+        if not self.tools:
+            LOGGER.error("No tools discovered")
+            return False
+
+        LOGGER.info("Discovered %d tools via %s", len(self.tools), source)
+        return True
+
+    async def _run_http_fallback(
+        self,
+        task_hint: Optional[str],
+        task_context: Optional[Dict[str, Any]],
+        mcp_error: str,
+    ) -> Dict[str, Any]:
+        base_url = self.mcp_url
+        if base_url.endswith("/mcp"):
+            base_url = base_url[: -len("/mcp")]
+        LOGGER.warning("Falling back to HTTP tools at %s", base_url)
+
+        async with httpx.AsyncClient(base_url=base_url, timeout=30.0) as client:
+            session = HttpToolSession(base_url, client)
+            await session.initialize()
+            LOGGER.info("HTTP tools session initialized")
+
+            if not await self._load_tools(session, "HTTP"):
+                return {"error": "No tools available", "turns": self.turn_count, "mcp_error": mcp_error}
+
+            result = await self._run_loop(session, task_hint, task_context)
+            if isinstance(result, dict):
+                result.setdefault("mcp_error", mcp_error)
+            return result
+
     async def run(
         self,
         task_hint: Optional[str] = None,
@@ -336,29 +434,18 @@ class GPTAgent:
                     await session.initialize()
                     LOGGER.info("MCP session initialized")
 
-                    tools_result = await session.list_tools()
-                    self.tools = []
-                    for tool in tools_result.tools:
-                        self.mcp_tools[tool.name] = tool
-                        openai_func = _mcp_tool_to_openai_function(tool)
-                        self.tools.append(openai_func)
-                        LOGGER.info("  Discovered tool: %s", tool.name)
-
-                    if not self.tools:
-                        LOGGER.error("No tools discovered")
+                    if not await self._load_tools(session, "MCP"):
                         return {"error": "No tools available", "turns": 0}
-
-                    LOGGER.info("Discovered %d tools via MCP", len(self.tools))
 
                     return await self._run_loop(session, task_hint, task_context)
 
         except Exception as e:
             LOGGER.error("MCP session failed: %s", e)
-            return {"error": str(e), "turns": self.turn_count}
+            return await self._run_http_fallback(task_hint, task_context, str(e))
 
     async def _run_loop(
         self,
-        session: ClientSession,
+        session: Any,
         task_hint: Optional[str],
         task_context: Optional[Dict[str, Any]],
     ) -> Dict[str, Any]:
