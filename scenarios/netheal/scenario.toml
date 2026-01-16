@@ -52,6 +52,6 @@ min_devices = 3
 max_devices = 15
 max_episode_steps = 100
 topology_types = ["star", "mesh", "hierarchical"]
-timeout_seconds = 300
+timeout_seconds = 1200
 seed = 1234
 enable_user_hints = true

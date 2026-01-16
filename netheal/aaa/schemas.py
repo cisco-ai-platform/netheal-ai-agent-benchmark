@@ -14,15 +14,15 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel, Field, HttpUrl, NonNegativeInt, PositiveInt
+from pydantic import BaseModel, Field, AnyHttpUrl, NonNegativeInt, PositiveInt
 
 
 class Participant(BaseModel):
     """Agent participant in an assessment."""
 
     role: str = Field(..., description="Role identifier (e.g., purple_agent).")
-    endpoint: HttpUrl = Field(..., description="Base URL for the participant agent.")
-    card_url: Optional[HttpUrl] = Field(
+    endpoint: AnyHttpUrl = Field(..., description="Base URL for the participant agent.")
+    card_url: Optional[AnyHttpUrl] = Field(
         default=None, description="Agent Card URL for capability discovery."
     )
 
@@ -102,7 +102,7 @@ class EpisodeStart(BaseModel):
     total_episodes: PositiveInt = Field(
         ..., description="Total episodes in the assessment."
     )
-    mcp_server_url: HttpUrl = Field(..., description="MCP tool server URL.")
+    mcp_server_url: AnyHttpUrl = Field(..., description="MCP tool server URL.")
     hint: Optional[str] = Field(
         default=None,
         description="Non-leaky hint describing network symptoms.",
