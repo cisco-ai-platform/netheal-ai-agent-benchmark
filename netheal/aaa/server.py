@@ -244,7 +244,18 @@ def _extract_assessment_payload(params: A2AMessageSendParams) -> Dict[str, objec
                     continue
 
     if "assessment_request" in payload and isinstance(payload["assessment_request"], dict):
-        payload = payload["assessment_request"]  # type: ignore[assignment]
+        request_payload = payload.pop("assessment_request")
+        if isinstance(request_payload, dict):
+            payload.update(request_payload)
+
+    if "participants" not in payload:
+        metadata = payload.get("metadata")
+        if isinstance(metadata, dict):
+            meta_participants = metadata.get("participants") or metadata.get(
+                "participant_agents"
+            )
+            if meta_participants is not None:
+                payload["participants"] = meta_participants
 
     participants = payload.get("participants")
     if isinstance(participants, (list, dict)):
@@ -283,21 +294,46 @@ def _normalize_participants(participants: object) -> Dict[str, Dict[str, object]
 
     if isinstance(participants, dict):
         items = participants.items()
-    else:
+    elif isinstance(participants, list):
         items = []
         for participant in participants:
+            if isinstance(participant, str):
+                items.append((participant, {"role": participant}))
+                continue
             if not isinstance(participant, dict):
                 continue
-            role = participant.get("role") or participant.get("name")
+            role = (
+                participant.get("role")
+                or participant.get("name")
+                or participant.get("id")
+            )
             items.append((role, participant))
+    else:
+        items = []
 
     for role, participant in items:
+        if isinstance(participant, str):
+            resolved_role = role or participant
+            if not resolved_role:
+                continue
+            endpoint = _normalize_endpoint(participant)
+            normalized[str(resolved_role)] = {
+                "role": resolved_role,
+                "endpoint": endpoint,
+            }
+            continue
+
         if not isinstance(participant, dict):
             continue
-        resolved_role = role or participant.get("role") or participant.get("name")
+        resolved_role = (
+            role
+            or participant.get("role")
+            or participant.get("name")
+            or participant.get("id")
+        )
         if not resolved_role:
             continue
-        endpoint = participant.get("endpoint")
+        endpoint = participant.get("endpoint") or participant.get("url")
         if endpoint:
             endpoint = _normalize_endpoint(str(endpoint))
         else:
@@ -319,12 +355,13 @@ def _build_fallback_request(payload: Dict[str, object]) -> AssessmentRequest:
 
     participants_payload = payload.get("participants")
     normalized_participants: Dict[str, Participant] = {}
-    if isinstance(participants_payload, dict):
-        for role, participant in participants_payload.items():
-            if not isinstance(participant, dict):
-                continue
+    if isinstance(participants_payload, (list, dict)):
+        normalized_dict = _normalize_participants(participants_payload)
+        for role, participant in normalized_dict.items():
             with contextlib.suppress(Exception):
-                normalized_participants[str(role)] = Participant.model_validate(participant)
+                normalized_participants[str(role)] = Participant.model_validate(
+                    participant
+                )
 
     return AssessmentRequest(
         task_id=payload.get("task_id") if isinstance(payload.get("task_id"), str) else None,
