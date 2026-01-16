@@ -29,6 +29,7 @@ import asyncio
 import json
 import logging
 import os
+import traceback
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -196,6 +197,17 @@ class GPTAgent:
         self.verbose = verbose
         self.on_event = on_event  # Callback for real-time event streaming
         self.reasoning_effort = reasoning_effort  # Controls reasoning depth for reasoning models
+        self.enable_http_fallback = os.environ.get("MCP_HTTP_FALLBACK", "1").lower() not in {
+            "0",
+            "false",
+            "no",
+        }
+
+        if os.environ.get("MCP_DEBUG"):
+            logging.getLogger("mcp").setLevel(logging.DEBUG)
+            logging.getLogger("mcp.client").setLevel(logging.DEBUG)
+            logging.getLogger("mcp.client.streamable_http").setLevel(logging.DEBUG)
+            logging.getLogger("httpx").setLevel(logging.INFO)
 
         env_path = Path(__file__).parents[2] / ".env"
         if env_path.exists():
@@ -370,6 +382,21 @@ class GPTAgent:
             except Exception as e:
                 LOGGER.warning("Event callback failed: %s", e)
 
+    def _log_mcp_exception(self, exc: Exception) -> None:
+        if isinstance(exc, BaseExceptionGroup):
+            LOGGER.error(
+                "MCP session failed with %d sub-exception(s)", len(exc.exceptions)
+            )
+            for idx, sub in enumerate(exc.exceptions, start=1):
+                LOGGER.error("MCP sub-exception %d: %r", idx, sub)
+                LOGGER.error(
+                    "MCP sub-exception %d traceback:\n%s",
+                    idx,
+                    "".join(traceback.format_exception(sub)),
+                )
+        else:
+            LOGGER.exception("MCP session failed")
+
     async def _load_tools(self, session: Any, source: str) -> bool:
         tools_result = await session.list_tools()
         self.tools = []
@@ -440,7 +467,9 @@ class GPTAgent:
                     return await self._run_loop(session, task_hint, task_context)
 
         except Exception as e:
-            LOGGER.error("MCP session failed: %s", e)
+            self._log_mcp_exception(e)
+            if not self.enable_http_fallback:
+                return {"error": str(e), "turns": self.turn_count}
             return await self._run_http_fallback(task_hint, task_context, str(e))
 
     async def _run_loop(
@@ -504,7 +533,7 @@ class GPTAgent:
             self.messages.append(assistant_message)
 
             usage_info = response.usage or {}
-
+            
             # Emit LLM response event with content/reasoning
             # Always emit, even if content is empty (model may proceed directly to tool calls)
             llm_content = response.content or ""
@@ -527,12 +556,12 @@ class GPTAgent:
                     }
                     for tc in response.tool_calls
                 ]
-
+                
                 self._emit_event("tool_calls", {
                     "tools": tool_call_summaries,
                     "reasoning": llm_content,  # Include reasoning that led to tool calls
                 })
-
+                
                 tool_results = []
                 for tool_call in response.tool_calls:
                     tool_name = tool_call.name
@@ -541,7 +570,7 @@ class GPTAgent:
                     LOGGER.info("  Tool: %s(%s)", tool_name, tool_args)
 
                     result = await self._execute_tool_mcp(session, tool_name, tool_args)
-
+                    
                     # Emit tool result event
                     self._emit_event("tool_result", {
                         "tool_name": tool_name,
@@ -626,7 +655,7 @@ class GPTAgent:
         extra_params = {}
         if self.reasoning_effort:
             extra_params["reasoning_effort"] = self.reasoning_effort
-
+        
         response = self.client.chat.completions.create(
             model=self.model,
             messages=self.messages,
@@ -634,7 +663,7 @@ class GPTAgent:
             tool_choice="auto" if self.tools else None,
             extra_body=extra_params if extra_params else None,
         )
-
+        
         assistant_message = response.choices[0].message
         tool_calls: List[LLMToolCall] = []
         if assistant_message.tool_calls:
@@ -667,7 +696,7 @@ class GPTAgent:
                         "prompt_tokens": usage.prompt_tokens,
                         "reasoning_effort": self.reasoning_effort,
                     })
-
+        
         LOGGER.info("LLM Response - Model: %s", response.model)
         LOGGER.info("LLM Response - Finish reason: %s", response.choices[0].finish_reason)
         LOGGER.info("LLM Response - Content: %s", assistant_message.content)

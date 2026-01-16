@@ -166,10 +166,12 @@ class NetHealGreenAgent:
             except asyncio.QueueFull:
                 LOGGER.warning("Tool call queue full, dropping event")
         
+        mcp_log_level = os.environ.get("MCP_SERVER_LOG_LEVEL", "warning")
         mcp_server = NetHealMCPServer(
-            runtime, 
-            host=mcp_host, 
+            runtime,
+            host=mcp_host,
             advertised_host=mcp_advertised_host,
+            log_level=mcp_log_level,
             on_tool_call=on_tool_call,
         )
         try:
