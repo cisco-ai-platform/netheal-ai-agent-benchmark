@@ -26,6 +26,8 @@ JSON body (see `webapp/backend/app/schemas.py`):
 }
 ```
 
+`hint_provider_mode` accepts: `auto` | `heuristic` | `azure` | `openai` | `anthropic` | `bedrock`.
+
 ## Request: POST /api/env/step
 
 ```json

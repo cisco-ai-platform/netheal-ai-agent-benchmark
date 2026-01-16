@@ -74,7 +74,9 @@ pip install -r requirements.txt
 - `numpy>=1.24.0` - Numerical computations
 - `matplotlib>=3.7.0` - Visualization (optional)
 - `pytest>=7.4.0` - Testing framework
-- `openai>=1.30.0` - Optional, for Azure OpenAI powered user hints
+- `openai>=1.30.0` - Optional, for Azure/OpenAI powered user hints
+- `anthropic>=0.37.0` - Optional, for Anthropic powered user hints
+- `boto3>=1.34.0` - Optional, for Bedrock powered user hints
 - `fastapi>=0.111.0` - Web API and A2A server
 - `uvicorn>=0.30.0` - ASGI server
 - `mcp>=1.0.0` - MCP protocol support
@@ -249,13 +251,19 @@ python -m netheal.aaa.demo --seed 42 --devices 6 --step --verbose
 
 ### Environment Variables (Optional)
 
-For LLM-powered hints, set Azure OpenAI credentials:
+For LLM-powered hints, set provider credentials:
 
 ```bash
 export AZURE_OPENAI_ENDPOINT=https://your-resource.openai.azure.com/
 export AZURE_OPENAI_API_KEY=your-key
 export AZURE_OPENAI_API_VERSION=2024-02-15-preview
 export AZURE_OPENAI_DEPLOYMENT=gpt-5
+export OPENAI_API_KEY=...
+export OPENAI_MODEL=gpt-4o-mini
+export ANTHROPIC_API_KEY=...
+export ANTHROPIC_MODEL=claude-3-5-sonnet-20241022
+export AWS_REGION=us-east-1
+export BEDROCK_MODEL_ID=anthropic.claude-3-5-sonnet-20241022
 ```
 
 ### Advanced Usage with Direct Components
@@ -421,22 +429,43 @@ This outcome-focused approach challenges the agent to learn effective long-term 
 ```python
 env = NetworkTroubleshootingEnv(
     enable_user_hints=True,          # default True
-    hint_provider_mode="auto",       # "auto" | "azure" | "heuristic"
+    hint_provider_mode="auto",       # "auto" | "azure" | "openai" | "anthropic" | "bedrock" | "heuristic"
     user_context={"access_point": "Guest-WiFi"}  # optional context for hint wording
 )
 ```
 
-### Azure OpenAI (optional)
+### LLM Hints (optional)
 
-If Azure OpenAI environment variables are set, `hint_provider_mode="auto"` uses GPT models via Azure to generate hints; otherwise a deterministic heuristic is used.
+If LLM environment variables are set, `hint_provider_mode="auto"` uses the configured provider to generate hints; otherwise a deterministic heuristic is used. When multiple providers are configured, set `LLM_PROVIDER` or an explicit `hint_provider_mode`.
 
-Required environment variables:
+Azure OpenAI:
 
 ```bash
 export AZURE_OPENAI_ENDPOINT=...           # e.g., https://your-resource.openai.azure.com/
 export AZURE_OPENAI_API_KEY=...
 export AZURE_OPENAI_API_VERSION=2024-02-15-preview
 export AZURE_OPENAI_DEPLOYMENT=gpt-5  # or your deployment name
+```
+
+OpenAI:
+
+```bash
+export OPENAI_API_KEY=...
+export OPENAI_MODEL=gpt-4o-mini  # or your model
+```
+
+Anthropic:
+
+```bash
+export ANTHROPIC_API_KEY=...
+export ANTHROPIC_MODEL=claude-3-5-sonnet-20241022
+```
+
+Bedrock:
+
+```bash
+export AWS_REGION=us-east-1
+export BEDROCK_MODEL_ID=anthropic.claude-3-5-sonnet-20241022
 ```
 
 Security note: Ground truth is provided to the hint generator but sanitized; hints avoid explicit fault types (e.g., "misconfiguration") and internal IDs.

@@ -25,7 +25,7 @@ NetHeal implements the AAA protocol with two agent roles:
 
 - Docker and Docker Compose
 - Python 3.9+
-- Azure OpenAI credentials (for GPT-powered solver)
+- LLM credentials (Azure/OpenAI/Anthropic/Bedrock) for GPT-powered solver or hints
 
 ## Quick Start
 
@@ -41,7 +41,7 @@ docker build -f Dockerfile.purple -t netheal-purple-agent:latest .
 
 ### 2. Configure Environment
 
-Optionally create a `.env` file with your Azure OpenAI credentials (leave blank to use heuristic hints):
+Optionally create a `.env` file with your LLM credentials (leave blank to use heuristic hints):
 
 ```bash
 cat > .env <<'EOF'
@@ -49,6 +49,12 @@ AZURE_OPENAI_ENDPOINT=
 AZURE_OPENAI_API_KEY=
 AZURE_OPENAI_API_VERSION=2024-02-15-preview
 AZURE_OPENAI_DEPLOYMENT=
+OPENAI_API_KEY=
+OPENAI_MODEL=
+ANTHROPIC_API_KEY=
+ANTHROPIC_MODEL=
+AWS_REGION=
+BEDROCK_MODEL_ID=
 EOF
 ```
 

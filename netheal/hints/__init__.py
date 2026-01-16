@@ -6,12 +6,13 @@
 Hint generation utilities for NetHeal.
 
 Provides a configurable hint provider interface with:
-- AzureGPT-based natural language hints (when configured)
+- LLM-based natural language hints (Azure/OpenAI/Anthropic/Bedrock)
 - Heuristic fallback hints for deterministic tests and offline use
 """
 
 from .provider import (
     BaseHintProvider,
+    LlmHintProvider,
     AzureGptHintProvider,
     HeuristicHintProvider,
     get_default_hint_provider,
@@ -19,6 +20,7 @@ from .provider import (
 
 __all__ = [
     "BaseHintProvider",
+    "LlmHintProvider",
     "AzureGptHintProvider",
     "HeuristicHintProvider",
     "get_default_hint_provider",

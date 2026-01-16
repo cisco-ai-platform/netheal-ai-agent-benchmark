@@ -7,7 +7,7 @@
 #   docker run -p 9020:9020 netheal-green-agent \
 #     --host 0.0.0.0 --port 9020 --card-url http://localhost:9020
 #
-# With Azure OpenAI hints:
+# With LLM hints (example Azure OpenAI config):
 #   docker run -p 9020:9020 \
 #     -e AZURE_OPENAI_ENDPOINT=https://your-resource.openai.azure.com/ \
 #     -e AZURE_OPENAI_API_KEY=your-key \

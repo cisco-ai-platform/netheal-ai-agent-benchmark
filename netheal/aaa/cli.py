@@ -24,6 +24,7 @@ import typer
 import uvicorn
 
 from netheal.aaa import server as server_module
+from netheal.hints.provider import _resolve_llm_provider
 
 logging.basicConfig(
     level=logging.INFO,
@@ -74,11 +75,11 @@ def serve(
     LOGGER.info("  Port: %d", port)
     LOGGER.info("  Card URL: %s", card_url)
 
-    azure_endpoint = os.environ.get("AZURE_OPENAI_ENDPOINT")
-    if azure_endpoint:
-        LOGGER.info("  Azure OpenAI: configured (hints enabled)")
+    hint_provider = _resolve_llm_provider("auto")
+    if hint_provider:
+        LOGGER.info("  LLM hints: configured (%s)", hint_provider)
     else:
-        LOGGER.info("  Azure OpenAI: not configured (heuristic hints)")
+        LOGGER.info("  LLM hints: not configured (heuristic hints)")
 
     uvicorn.run(
         server_module.app,
