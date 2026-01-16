@@ -36,7 +36,7 @@ OUTPUT_DIR = Path(os.environ.get("OUTPUT_DIR", "/app/output"))
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 from sse_starlette.sse import EventSourceResponse
 
 from a2a.server.apps.jsonrpc import A2AFastAPIApplication
@@ -69,8 +69,10 @@ from a2a.utils.errors import ServerError
 
 from netheal.aaa.green_agent import NetHealGreenAgent
 from netheal.aaa.schemas import (
+    AssessmentConfig,
     AssessmentRequest,
     AssessmentResult,
+    Participant,
     TaskStatus,
     TaskUpdate,
     TaskUpdateLevel,
@@ -244,11 +246,9 @@ def _extract_assessment_payload(params: A2AMessageSendParams) -> Dict[str, objec
     if "assessment_request" in payload and isinstance(payload["assessment_request"], dict):
         payload = payload["assessment_request"]  # type: ignore[assignment]
 
-    if "participants" in payload and isinstance(payload["participants"], list):
-        participants_list = payload["participants"]
-        payload["participants"] = {
-            participant.get("role"): participant for participant in participants_list if isinstance(participant, dict)
-        }
+    participants = payload.get("participants")
+    if isinstance(participants, (list, dict)):
+        payload["participants"] = _normalize_participants(participants)
 
     if "task_id" not in payload:
         if params.message.task_id:
@@ -265,9 +265,73 @@ def _build_assessment_request(params: A2AMessageSendParams) -> AssessmentRequest
         return AssessmentRequest()
     try:
         return AssessmentRequest.model_validate(payload)
-    except Exception:
-        LOGGER.warning("Failed to parse assessment payload, falling back to defaults")
-        return AssessmentRequest()
+    except ValidationError as exc:
+        LOGGER.warning(
+            "Failed to parse assessment payload, falling back to defaults: %s", exc
+        )
+        return _build_fallback_request(payload)
+
+
+def _normalize_endpoint(endpoint: str) -> str:
+    if "://" in endpoint:
+        return endpoint
+    return f"http://{endpoint}"
+
+
+def _normalize_participants(participants: object) -> Dict[str, Dict[str, object]]:
+    normalized: Dict[str, Dict[str, object]] = {}
+
+    if isinstance(participants, dict):
+        items = participants.items()
+    else:
+        items = []
+        for participant in participants:
+            if not isinstance(participant, dict):
+                continue
+            role = participant.get("role") or participant.get("name")
+            items.append((role, participant))
+
+    for role, participant in items:
+        if not isinstance(participant, dict):
+            continue
+        resolved_role = role or participant.get("role") or participant.get("name")
+        if not resolved_role:
+            continue
+        endpoint = participant.get("endpoint")
+        if endpoint:
+            endpoint = _normalize_endpoint(str(endpoint))
+        else:
+            endpoint = _normalize_endpoint(f"{resolved_role}:9009")
+        enriched = dict(participant)
+        enriched.setdefault("role", resolved_role)
+        enriched.setdefault("endpoint", endpoint)
+        normalized[str(resolved_role)] = enriched
+
+    return normalized
+
+
+def _build_fallback_request(payload: Dict[str, object]) -> AssessmentRequest:
+    fallback_config = AssessmentConfig()
+    config_payload = payload.get("config")
+    if isinstance(config_payload, dict):
+        with contextlib.suppress(Exception):
+            fallback_config = AssessmentConfig.model_validate(config_payload)
+
+    participants_payload = payload.get("participants")
+    normalized_participants: Dict[str, Participant] = {}
+    if isinstance(participants_payload, dict):
+        for role, participant in participants_payload.items():
+            if not isinstance(participant, dict):
+                continue
+            with contextlib.suppress(Exception):
+                normalized_participants[str(role)] = Participant.model_validate(participant)
+
+    return AssessmentRequest(
+        task_id=payload.get("task_id") if isinstance(payload.get("task_id"), str) else None,
+        participants=normalized_participants,
+        config=fallback_config,
+        metadata=payload.get("metadata", {}) if isinstance(payload.get("metadata"), dict) else {},
+    )
 
 
 async def _create_task_record(payload: AssessmentRequest) -> TaskRecord:
