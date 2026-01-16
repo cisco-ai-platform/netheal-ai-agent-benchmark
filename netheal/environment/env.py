@@ -50,8 +50,9 @@ class NetworkTroubleshootingEnv(gym.Env):
     metadata = {"render_modes": ["human", "text"], "render_fps": 1}
     
     def __init__(self, 
-                 max_devices: int = 10,
-                 max_episode_steps: int = 20,
+                 min_devices: int = 3,
+                 max_devices: int = 15,
+                 max_episode_steps: int = 100,
                  topology_types: List[str] = None,
                  fault_types: List[FaultType] = None,
                  reward_scaling_factor: float = 10.0,
@@ -64,6 +65,7 @@ class NetworkTroubleshootingEnv(gym.Env):
         Initialize the enhanced network troubleshooting environment.
         
         Args:
+            min_devices: Minimum number of devices in generated networks
             max_devices: Maximum number of devices in generated networks
             max_episode_steps: Maximum steps per episode
             topology_types: List of topology types to generate
@@ -73,6 +75,10 @@ class NetworkTroubleshootingEnv(gym.Env):
         """
         super().__init__()
         
+        if min_devices > max_devices:
+            raise ValueError("min_devices cannot exceed max_devices")
+
+        self.min_devices = min_devices
         self.max_devices = max_devices
         self.max_episode_steps = max_episode_steps
         self.topology_types = topology_types or ["linear", "star", "mesh", "hierarchical", "random"]
@@ -272,7 +278,7 @@ class NetworkTroubleshootingEnv(gym.Env):
     
     def _generate_network(self):
         """Generate a random network topology."""
-        num_devices = random.randint(3, self.max_devices)
+        num_devices = random.randint(self.min_devices, self.max_devices)
         topology_type = random.choice(self.topology_types)
         
         if topology_type == "linear":

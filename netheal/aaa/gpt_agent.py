@@ -12,6 +12,15 @@ design - all task-specific information comes from the green agent.
 Usage:
     python -m netheal.aaa.gpt_agent --mcp-url http://localhost:9025/mcp
     python -m netheal.aaa.gpt_agent --mcp-url http://localhost:9025/mcp --task-hint "Users report slow connections"
+
+Environment variables:
+    - LLM_PROVIDER: azure | openai | anthropic | bedrock (optional, auto-detected if unset)
+    - LLM_MODEL: model or deployment name (fallback for provider-specific model vars)
+    - AZURE_OPENAI_ENDPOINT / AZURE_OPENAI_API_KEY / AZURE_OPENAI_API_VERSION / AZURE_OPENAI_DEPLOYMENT
+    - OPENAI_API_KEY / OPENAI_MODEL / OPENAI_BASE_URL / OPENAI_ORG_ID
+    - ANTHROPIC_API_KEY / ANTHROPIC_MODEL / ANTHROPIC_API_URL
+    - AWS_REGION / AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY / AWS_SESSION_TOKEN / BEDROCK_MODEL_ID
+    - REASONING_EFFORT: low | medium | high (reasoning models)
 """
 from __future__ import annotations
 
@@ -20,13 +29,28 @@ import asyncio
 import json
 import logging
 import os
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from dotenv import load_dotenv
 from mcp import ClientSession
 from mcp.client.streamable_http import streamablehttp_client
-from openai import AzureOpenAI
+try:
+    from openai import AzureOpenAI, OpenAI  # type: ignore
+except Exception:  # pragma: no cover - optional dependency
+    AzureOpenAI = None  # type: ignore
+    OpenAI = None  # type: ignore
+
+try:
+    from anthropic import Anthropic  # type: ignore
+except Exception:  # pragma: no cover - optional dependency
+    Anthropic = None  # type: ignore
+
+try:
+    import boto3  # type: ignore
+except Exception:  # pragma: no cover - optional dependency
+    boto3 = None  # type: ignore
 
 LOGGER = logging.getLogger("netheal.gpt_agent")
 logging.basicConfig(
@@ -77,8 +101,26 @@ def _mcp_tool_to_openai_function(tool: Any) -> Dict[str, Any]:
     return {"type": "function", "function": func_def}
 
 
+@dataclass
+class LLMToolCall:
+    """Normalized tool call representation across providers."""
+    call_id: str
+    name: str
+    arguments: Dict[str, Any]
+
+
+@dataclass
+class LLMResponse:
+    """Normalized LLM response representation across providers."""
+    model: str
+    content: Optional[str]
+    tool_calls: List[LLMToolCall]
+    finish_reason: Optional[str]
+    usage: Dict[str, Any]
+
+
 class GPTAgent:
-    """GPT-based solver using MCP and Azure OpenAI."""
+    """GPT-based solver using MCP and a configurable LLM provider."""
 
     def __init__(
         self,
@@ -104,18 +146,159 @@ class GPTAgent:
         else:
             load_dotenv()
 
-        self.client = AzureOpenAI(
-            azure_endpoint=os.environ["AZURE_OPENAI_ENDPOINT"],
-            api_key=os.environ["AZURE_OPENAI_API_KEY"],
-            api_version=os.environ.get("AZURE_OPENAI_API_VERSION", "2024-02-15-preview"),
-        )
-        self.deployment = os.environ["AZURE_OPENAI_DEPLOYMENT"]
+        self.provider = self._resolve_provider()
+        self.client, self.model = self._init_client()
+        self.max_output_tokens = int(os.environ.get("LLM_MAX_TOKENS", "1024"))
 
         self.messages: List[Dict[str, Any]] = []
         self.tools: List[Dict[str, Any]] = []
         self.mcp_tools: Dict[str, Any] = {}
         self.turn_count = 0
         self.task_completed = False
+
+    def _resolve_provider(self) -> str:
+        provider = os.environ.get("LLM_PROVIDER")
+        if provider:
+            provider = provider.strip().lower()
+            if provider not in ("azure", "openai", "anthropic", "bedrock"):
+                raise RuntimeError(
+                    f"Unsupported LLM_PROVIDER '{provider}'. Use azure|openai|anthropic|bedrock."
+                )
+            return provider
+
+        available = []
+        if self._azure_configured():
+            available.append("azure")
+        if self._openai_configured():
+            available.append("openai")
+        if self._anthropic_configured():
+            available.append("anthropic")
+        if self._bedrock_configured():
+            available.append("bedrock")
+
+        if not available:
+            raise RuntimeError(
+                "No LLM provider configured. Set LLM_PROVIDER and the corresponding env vars "
+                "(AZURE_OPENAI_*, OPENAI_*, ANTHROPIC_*, or AWS_* for Bedrock)."
+            )
+
+        if len(available) == 1:
+            return available[0]
+
+        inferred = self._infer_provider_from_model(available)
+        if inferred:
+            return inferred
+
+        raise RuntimeError(
+            "Multiple LLM providers detected. Set LLM_PROVIDER to one of: "
+            f"{', '.join(available)}."
+        )
+
+    @staticmethod
+    def _azure_configured() -> bool:
+        return bool(
+            os.environ.get("AZURE_OPENAI_ENDPOINT")
+            and os.environ.get("AZURE_OPENAI_API_KEY")
+            and (os.environ.get("AZURE_OPENAI_DEPLOYMENT") or os.environ.get("LLM_MODEL"))
+        )
+
+    @staticmethod
+    def _openai_configured() -> bool:
+        return bool(
+            os.environ.get("OPENAI_API_KEY")
+            and (os.environ.get("OPENAI_MODEL") or os.environ.get("LLM_MODEL"))
+        )
+
+    @staticmethod
+    def _anthropic_configured() -> bool:
+        return bool(
+            os.environ.get("ANTHROPIC_API_KEY")
+            and (os.environ.get("ANTHROPIC_MODEL") or os.environ.get("LLM_MODEL"))
+        )
+
+    @staticmethod
+    def _bedrock_configured() -> bool:
+        return bool(
+            (os.environ.get("BEDROCK_MODEL_ID") or os.environ.get("LLM_MODEL"))
+            and (os.environ.get("AWS_REGION") or os.environ.get("AWS_DEFAULT_REGION"))
+        )
+
+    def _infer_provider_from_model(self, available: List[str]) -> Optional[str]:
+        model = os.environ.get("LLM_MODEL")
+        if not model:
+            return None
+        lowered = model.lower()
+        if "bedrock" in available:
+            if lowered.startswith("anthropic.") or lowered.startswith("amazon.") or lowered.startswith("meta."):
+                return "bedrock"
+        if "anthropic" in available and "claude" in lowered:
+            return "anthropic"
+        if "openai" in available and "azure" not in available:
+            return "openai"
+        if "azure" in available and "openai" not in available:
+            return "azure"
+        return None
+
+    def _init_client(self) -> tuple[Any, str]:
+        if self.provider == "azure":
+            if AzureOpenAI is None:
+                raise RuntimeError("AzureOpenAI SDK not available. Install 'openai>=1.0'.")
+            api_key = os.environ.get("AZURE_OPENAI_API_KEY")
+            endpoint = os.environ.get("AZURE_OPENAI_ENDPOINT")
+            api_version = os.environ.get("AZURE_OPENAI_API_VERSION", "2024-02-15-preview")
+            deployment = os.environ.get("AZURE_OPENAI_DEPLOYMENT") or os.environ.get("LLM_MODEL")
+            if not api_key or not endpoint or not deployment:
+                raise RuntimeError("Azure OpenAI environment not configured.")
+            client = AzureOpenAI(
+                azure_endpoint=endpoint,
+                api_key=api_key,
+                api_version=api_version,
+            )
+            return client, deployment
+
+        if self.provider == "openai":
+            if OpenAI is None:
+                raise RuntimeError("OpenAI SDK not available. Install 'openai>=1.0'.")
+            api_key = os.environ.get("OPENAI_API_KEY")
+            model = os.environ.get("OPENAI_MODEL") or os.environ.get("LLM_MODEL")
+            base_url = os.environ.get("OPENAI_BASE_URL")
+            org_id = os.environ.get("OPENAI_ORG_ID") or os.environ.get("OPENAI_ORGANIZATION")
+            if not api_key or not model:
+                raise RuntimeError("OpenAI environment not configured.")
+            client = OpenAI(api_key=api_key, base_url=base_url, organization=org_id)
+            return client, model
+
+        if self.provider == "anthropic":
+            if Anthropic is None:
+                raise RuntimeError("Anthropic SDK not available. Install 'anthropic>=0.37.0'.")
+            api_key = os.environ.get("ANTHROPIC_API_KEY")
+            model = os.environ.get("ANTHROPIC_MODEL") or os.environ.get("LLM_MODEL")
+            base_url = os.environ.get("ANTHROPIC_API_URL") or os.environ.get("ANTHROPIC_BASE_URL")
+            if not api_key or not model:
+                raise RuntimeError("Anthropic environment not configured.")
+            client = Anthropic(api_key=api_key, base_url=base_url)
+            return client, model
+
+        if self.provider == "bedrock":
+            if boto3 is None:
+                raise RuntimeError("boto3 not available. Install 'boto3'.")
+            region = os.environ.get("AWS_REGION") or os.environ.get("AWS_DEFAULT_REGION")
+            model = os.environ.get("BEDROCK_MODEL_ID") or os.environ.get("LLM_MODEL")
+            if not region or not model:
+                raise RuntimeError("Bedrock environment not configured.")
+            session_token = os.environ.get("AWS_SESSION_TOKEN") or os.environ.get("AWS_SESSION_ID")
+            client_kwargs = {"service_name": "bedrock-runtime", "region_name": region}
+            access_key = os.environ.get("AWS_ACCESS_KEY_ID")
+            secret_key = os.environ.get("AWS_SECRET_ACCESS_KEY")
+            if access_key and secret_key:
+                client_kwargs["aws_access_key_id"] = access_key
+                client_kwargs["aws_secret_access_key"] = secret_key
+                if session_token:
+                    client_kwargs["aws_session_token"] = session_token
+            client = boto3.client(**client_kwargs)
+            return client, model
+
+        raise RuntimeError(f"Unsupported provider '{self.provider}'.")
     
     def _emit_event(self, event_type: str, data: Dict[str, Any]) -> None:
         """Emit an event to the callback if registered."""
@@ -143,6 +326,8 @@ class GPTAgent:
         """
         LOGGER.info("Starting GPT agent session")
         LOGGER.info("  MCP URL: %s", self.mcp_url)
+        LOGGER.info("  Provider: %s", self.provider)
+        LOGGER.info("  Model: %s", self.model)
         LOGGER.info("  Max turns: %d", self.max_turns)
 
         try:
@@ -227,66 +412,49 @@ class GPTAgent:
             # Emit turn start event
             self._emit_event("turn_start", {"max_turns": self.max_turns})
 
-            response = self._call_gpt()
-            assistant_message = response.choices[0].message
-            self.messages.append(assistant_message.model_dump())
-            
-            # Extract usage info for reasoning models
-            usage_info = {}
-            if response.usage:
-                usage_info = {
-                    "prompt_tokens": response.usage.prompt_tokens,
-                    "completion_tokens": response.usage.completion_tokens,
-                    "total_tokens": response.usage.total_tokens,
-                }
-                if hasattr(response.usage, 'completion_tokens_details') and response.usage.completion_tokens_details:
-                    details = response.usage.completion_tokens_details
-                    if hasattr(details, 'reasoning_tokens') and details.reasoning_tokens:
-                        usage_info["reasoning_tokens"] = details.reasoning_tokens
-            
+            response = self._call_llm()
+            assistant_message = self._build_assistant_message(response)
+            self.messages.append(assistant_message)
+
+            usage_info = response.usage or {}
+
             # Emit LLM response event with content/reasoning
             # Always emit, even if content is empty (model may proceed directly to tool calls)
-            llm_content = assistant_message.content or ""
+            llm_content = response.content or ""
             self._emit_event("llm_response", {
                 "content": llm_content,
-                "has_tool_calls": bool(assistant_message.tool_calls),
-                "finish_reason": response.choices[0].finish_reason,
+                "has_tool_calls": bool(response.tool_calls),
+                "finish_reason": response.finish_reason,
                 "model": response.model,
                 "usage": usage_info,
-                "raw_content_is_none": assistant_message.content is None,
-                "raw_content_is_empty": assistant_message.content == "",
+                "raw_content_is_none": response.content is None,
+                "raw_content_is_empty": response.content == "",
             })
 
-            if assistant_message.tool_calls:
+            if response.tool_calls:
                 # Emit tool calls event
-                tool_call_summaries = []
-                for tc in assistant_message.tool_calls:
-                    try:
-                        args = json.loads(tc.function.arguments)
-                    except json.JSONDecodeError:
-                        args = {}
-                    tool_call_summaries.append({
-                        "name": tc.function.name,
-                        "arguments": args,
-                    })
-                
+                tool_call_summaries = [
+                    {
+                        "name": tc.name,
+                        "arguments": tc.arguments,
+                    }
+                    for tc in response.tool_calls
+                ]
+
                 self._emit_event("tool_calls", {
                     "tools": tool_call_summaries,
                     "reasoning": llm_content,  # Include reasoning that led to tool calls
                 })
-                
+
                 tool_results = []
-                for tool_call in assistant_message.tool_calls:
-                    tool_name = tool_call.function.name
-                    try:
-                        tool_args = json.loads(tool_call.function.arguments)
-                    except json.JSONDecodeError:
-                        tool_args = {}
+                for tool_call in response.tool_calls:
+                    tool_name = tool_call.name
+                    tool_args = tool_call.arguments
 
                     LOGGER.info("  Tool: %s(%s)", tool_name, tool_args)
 
                     result = await self._execute_tool_mcp(session, tool_name, tool_args)
-                    
+
                     # Emit tool result event
                     self._emit_event("tool_result", {
                         "tool_name": tool_name,
@@ -308,19 +476,19 @@ class GPTAgent:
 
                     tool_results.append({
                         "role": "tool",
-                        "tool_call_id": tool_call.id,
+                        "tool_call_id": tool_call.call_id,
                         "content": json.dumps(result) if isinstance(result, dict) else str(result),
                     })
 
                 self.messages.extend(tool_results)
             else:
-                if assistant_message.content:
-                    LOGGER.info("  Assistant: %s", assistant_message.content[:200])
+                if response.content:
+                    LOGGER.info("  Assistant: %s", response.content[:200])
                     self._emit_event("assistant_message", {
-                        "content": assistant_message.content,
+                        "content": response.content,
                     })
 
-                if self._appears_complete(assistant_message.content):
+                if self._appears_complete(response.content):
                     self.task_completed = True
                     self._emit_event("task_complete", {
                         "completed_by": "natural_completion",
@@ -338,49 +506,376 @@ class GPTAgent:
             "max_turns_reached": self.turn_count >= self.max_turns,
         }
 
-    def _call_gpt(self) -> Any:
-        """Make chat completion call with reasoning support."""
-        # Build extra parameters for reasoning models (GPT-5, o3, o4-mini)
+    def _build_assistant_message(self, response: LLMResponse) -> Dict[str, Any]:
+        message: Dict[str, Any] = {
+            "role": "assistant",
+            "content": response.content,
+        }
+        if response.tool_calls:
+            message["tool_calls"] = [
+                {
+                    "id": tc.call_id,
+                    "type": "function",
+                    "function": {
+                        "name": tc.name,
+                        "arguments": json.dumps(tc.arguments),
+                    },
+                }
+                for tc in response.tool_calls
+            ]
+        return message
+
+    def _call_llm(self) -> LLMResponse:
+        if self.provider in ("azure", "openai"):
+            return self._call_openai()
+        if self.provider == "anthropic":
+            return self._call_anthropic()
+        if self.provider == "bedrock":
+            return self._call_bedrock()
+        raise RuntimeError(f"Unsupported provider '{self.provider}'.")
+
+    def _call_openai(self) -> LLMResponse:
+        """Make OpenAI/Azure chat completion call with reasoning support."""
         extra_params = {}
         if self.reasoning_effort:
             extra_params["reasoning_effort"] = self.reasoning_effort
-        
+
         response = self.client.chat.completions.create(
-            model=self.deployment,
+            model=self.model,
             messages=self.messages,
             tools=self.tools if self.tools else None,
             tool_choice="auto" if self.tools else None,
             extra_body=extra_params if extra_params else None,
         )
-        
-        # Log full response for debugging (especially for reasoning models)
-        LOGGER.info("GPT Response - Model: %s", response.model)
-        LOGGER.info("GPT Response - Finish reason: %s", response.choices[0].finish_reason)
-        LOGGER.info("GPT Response - Content: %s", response.choices[0].message.content)
-        LOGGER.info("GPT Response - Tool calls: %s", 
-                    len(response.choices[0].message.tool_calls) if response.choices[0].message.tool_calls else 0)
-        
-        # Check for reasoning tokens (GPT-5, o3, o4-mini reasoning models)
+
+        assistant_message = response.choices[0].message
+        tool_calls: List[LLMToolCall] = []
+        if assistant_message.tool_calls:
+            for tc in assistant_message.tool_calls:
+                try:
+                    args = json.loads(tc.function.arguments)
+                except json.JSONDecodeError:
+                    args = {}
+                tool_calls.append(
+                    LLMToolCall(call_id=tc.id, name=tc.function.name, arguments=args)
+                )
+
+        usage_info: Dict[str, Any] = {}
         usage = response.usage
         if usage:
-            LOGGER.info("GPT Usage - Prompt tokens: %d, Completion tokens: %d", 
-                        usage.prompt_tokens, usage.completion_tokens)
+            usage_info = {
+                "prompt_tokens": usage.prompt_tokens,
+                "completion_tokens": usage.completion_tokens,
+                "total_tokens": usage.total_tokens,
+            }
             # Reasoning models include reasoning_tokens in completion_tokens_details
-            if hasattr(usage, 'completion_tokens_details') and usage.completion_tokens_details:
+            if hasattr(usage, "completion_tokens_details") and usage.completion_tokens_details:
                 details = usage.completion_tokens_details
-                reasoning_tokens = getattr(details, 'reasoning_tokens', None)
+                reasoning_tokens = getattr(details, "reasoning_tokens", None)
                 if reasoning_tokens:
-                    LOGGER.info("GPT Usage - Reasoning tokens: %d (reasoning_effort=%s)", 
-                                reasoning_tokens, self.reasoning_effort)
-                    # Emit reasoning tokens info
+                    usage_info["reasoning_tokens"] = reasoning_tokens
                     self._emit_event("reasoning_usage", {
                         "reasoning_tokens": reasoning_tokens,
                         "completion_tokens": usage.completion_tokens,
                         "prompt_tokens": usage.prompt_tokens,
                         "reasoning_effort": self.reasoning_effort,
                     })
-        
-        return response
+
+        LOGGER.info("LLM Response - Model: %s", response.model)
+        LOGGER.info("LLM Response - Finish reason: %s", response.choices[0].finish_reason)
+        LOGGER.info("LLM Response - Content: %s", assistant_message.content)
+        LOGGER.info(
+            "LLM Response - Tool calls: %s",
+            len(assistant_message.tool_calls) if assistant_message.tool_calls else 0,
+        )
+
+        return LLMResponse(
+            model=response.model,
+            content=assistant_message.content,
+            tool_calls=tool_calls,
+            finish_reason=response.choices[0].finish_reason,
+            usage=usage_info,
+        )
+
+    def _call_anthropic(self) -> LLMResponse:
+        """Make Anthropic messages call with tool support."""
+        system, messages = self._build_anthropic_messages()
+        tools = self._openai_tools_to_anthropic() if self.tools else None
+
+        create_params: Dict[str, Any] = {
+            "model": self.model,
+            "messages": messages,
+            "max_tokens": self.max_output_tokens,
+        }
+        if system:
+            create_params["system"] = system
+        if tools:
+            create_params["tools"] = tools
+
+        response = self.client.messages.create(**create_params)
+
+        content_blocks = response.content or []
+        text_parts: List[str] = []
+        tool_calls: List[LLMToolCall] = []
+        for block in content_blocks:
+            block_type = getattr(block, "type", None)
+            if block_type is None and isinstance(block, dict):
+                block_type = block.get("type")
+            if block_type == "text":
+                text_parts.append(getattr(block, "text", None) or (block.get("text") if isinstance(block, dict) else ""))
+            elif block_type == "tool_use":
+                tool_calls.append(
+                    LLMToolCall(
+                        call_id=getattr(block, "id", None) or (block.get("id") if isinstance(block, dict) else "") or "",
+                        name=getattr(block, "name", None) or (block.get("name") if isinstance(block, dict) else "") or "",
+                        arguments=getattr(block, "input", None) or (block.get("input") if isinstance(block, dict) else {}) or {},
+                    )
+                )
+
+        usage_info = {}
+        usage = getattr(response, "usage", None)
+        if usage:
+            prompt_tokens = getattr(usage, "input_tokens", 0)
+            completion_tokens = getattr(usage, "output_tokens", 0)
+            usage_info = {
+                "prompt_tokens": prompt_tokens,
+                "completion_tokens": completion_tokens,
+                "total_tokens": prompt_tokens + completion_tokens,
+            }
+
+        content_text = "".join(text_parts) if text_parts else None
+        finish_reason = getattr(response, "stop_reason", None)
+
+        LOGGER.info("LLM Response - Model: %s", response.model)
+        LOGGER.info("LLM Response - Finish reason: %s", finish_reason)
+        LOGGER.info("LLM Response - Content: %s", content_text)
+        LOGGER.info("LLM Response - Tool calls: %s", len(tool_calls))
+
+        return LLMResponse(
+            model=response.model,
+            content=content_text,
+            tool_calls=tool_calls,
+            finish_reason=finish_reason,
+            usage=usage_info,
+        )
+
+    def _openai_tools_to_anthropic(self) -> List[Dict[str, Any]]:
+        tools: List[Dict[str, Any]] = []
+        for tool in self.tools:
+            function = tool.get("function", {})
+            tools.append({
+                "name": function.get("name"),
+                "description": function.get("description", ""),
+                "input_schema": function.get("parameters", {"type": "object", "properties": {}}),
+            })
+        return tools
+
+    def _call_bedrock(self) -> LLMResponse:
+        """Make Bedrock converse call with tool support."""
+        system, messages = self._build_bedrock_messages()
+        tool_config = None
+        if self.tools:
+            tool_config = {
+                "tools": self._openai_tools_to_bedrock(),
+                "toolChoice": {"auto": {}},
+            }
+
+        inference_config = {
+            "maxTokens": self.max_output_tokens,
+            "temperature": float(os.environ.get("LLM_TEMPERATURE", "0")),
+        }
+
+        request: Dict[str, Any] = {
+            "modelId": self.model,
+            "messages": messages,
+            "inferenceConfig": inference_config,
+        }
+        if system:
+            request["system"] = [{"text": system}]
+        if tool_config:
+            request["toolConfig"] = tool_config
+
+        response = self.client.converse(**request)
+
+        output_message = (response.get("output", {}) or {}).get("message", {}) or {}
+        content_blocks = output_message.get("content", []) or []
+
+        text_parts: List[str] = []
+        tool_calls: List[LLMToolCall] = []
+        for block in content_blocks:
+            if "text" in block:
+                text_parts.append(block.get("text", ""))
+                continue
+            if "toolUse" in block:
+                tool_use = block.get("toolUse", {}) or {}
+                tool_calls.append(
+                    LLMToolCall(
+                        call_id=tool_use.get("toolUseId", ""),
+                        name=tool_use.get("name", ""),
+                        arguments=tool_use.get("input", {}) or {},
+                    )
+                )
+
+        usage_info = {}
+        usage = response.get("usage", {}) or {}
+        input_tokens = usage.get("inputTokens")
+        output_tokens = usage.get("outputTokens")
+        if input_tokens is not None and output_tokens is not None:
+            usage_info = {
+                "prompt_tokens": input_tokens,
+                "completion_tokens": output_tokens,
+                "total_tokens": input_tokens + output_tokens,
+            }
+
+        finish_reason = response.get("stopReason")
+        content_text = "".join(text_parts) if text_parts else None
+
+        LOGGER.info("LLM Response - Model: %s", self.model)
+        LOGGER.info("LLM Response - Finish reason: %s", finish_reason)
+        LOGGER.info("LLM Response - Content: %s", content_text)
+        LOGGER.info("LLM Response - Tool calls: %s", len(tool_calls))
+
+        return LLMResponse(
+            model=self.model,
+            content=content_text,
+            tool_calls=tool_calls,
+            finish_reason=finish_reason,
+            usage=usage_info,
+        )
+
+    def _build_anthropic_messages(self) -> tuple[Optional[str], List[Dict[str, Any]]]:
+        system: Optional[str] = None
+        messages: List[Dict[str, Any]] = []
+        for msg in self.messages:
+            role = msg.get("role")
+            if role == "system":
+                system = msg.get("content")
+                continue
+            if role == "user":
+                content = msg.get("content", "")
+                messages.append({
+                    "role": "user",
+                    "content": [{"type": "text", "text": str(content)}],
+                })
+                continue
+            if role == "assistant":
+                blocks: List[Dict[str, Any]] = []
+                content = msg.get("content")
+                if content:
+                    blocks.append({"type": "text", "text": str(content)})
+                for tc in msg.get("tool_calls", []) or []:
+                    function = tc.get("function", {})
+                    args = function.get("arguments", {})
+                    if isinstance(args, str):
+                        try:
+                            args = json.loads(args)
+                        except json.JSONDecodeError:
+                            args = {}
+                    blocks.append({
+                        "type": "tool_use",
+                        "id": tc.get("id", ""),
+                        "name": function.get("name", ""),
+                        "input": args or {},
+                    })
+                if blocks:
+                    messages.append({"role": "assistant", "content": blocks})
+                continue
+            if role == "tool":
+                tool_id = msg.get("tool_call_id")
+                content = msg.get("content", "")
+                messages.append({
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": tool_id,
+                            "content": str(content),
+                        }
+                    ],
+                })
+        return system, messages
+
+    def _openai_tools_to_bedrock(self) -> List[Dict[str, Any]]:
+        tools: List[Dict[str, Any]] = []
+        for tool in self.tools:
+            function = tool.get("function", {})
+            tools.append({
+                "toolSpec": {
+                    "name": function.get("name"),
+                    "description": function.get("description", ""),
+                    "inputSchema": {
+                        "json": function.get("parameters", {"type": "object", "properties": {}})
+                    },
+                }
+            })
+        return tools
+
+    def _build_bedrock_messages(self) -> tuple[Optional[str], List[Dict[str, Any]]]:
+        system: Optional[str] = None
+        messages: List[Dict[str, Any]] = []
+
+        for msg in self.messages:
+            role = msg.get("role")
+            if role == "system":
+                system = msg.get("content")
+                continue
+            if role == "user":
+                content = msg.get("content", "")
+                messages.append({
+                    "role": "user",
+                    "content": [{"text": str(content)}],
+                })
+                continue
+            if role == "assistant":
+                blocks: List[Dict[str, Any]] = []
+                content = msg.get("content")
+                if content:
+                    blocks.append({"text": str(content)})
+                for tc in msg.get("tool_calls", []) or []:
+                    function = tc.get("function", {}) or {}
+                    args = function.get("arguments", {})
+                    if isinstance(args, str):
+                        try:
+                            args = json.loads(args)
+                        except json.JSONDecodeError:
+                            args = {}
+                    blocks.append({
+                        "toolUse": {
+                            "toolUseId": tc.get("id", ""),
+                            "name": function.get("name", ""),
+                            "input": args or {},
+                        }
+                    })
+                if blocks:
+                    messages.append({"role": "assistant", "content": blocks})
+                continue
+            if role == "tool":
+                tool_id = msg.get("tool_call_id")
+                content = msg.get("content", "")
+                payload = None
+                if isinstance(content, str):
+                    try:
+                        payload = json.loads(content)
+                    except json.JSONDecodeError:
+                        payload = None
+                tool_content: List[Dict[str, Any]] = []
+                if payload is not None:
+                    tool_content.append({"json": payload})
+                else:
+                    tool_content.append({"text": str(content)})
+                messages.append({
+                    "role": "user",
+                    "content": [
+                        {
+                            "toolResult": {
+                                "toolUseId": tool_id,
+                                "content": tool_content,
+                            }
+                        }
+                    ],
+                })
+
+        return system, messages
 
     async def _execute_tool_mcp(
         self,

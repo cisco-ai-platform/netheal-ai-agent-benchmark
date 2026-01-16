@@ -33,14 +33,20 @@ class AssessmentConfig(BaseModel):
     num_episodes: PositiveInt = Field(
         default=5, description="Number of scenarios to evaluate."
     )
+    min_devices: PositiveInt = Field(
+        default=3,
+        ge=3,
+        le=50,
+        description="Minimum devices per topology.",
+    )
     max_devices: PositiveInt = Field(
-        default=8,
+        default=15,
         ge=3,
         le=50,
         description="Maximum devices per topology.",
     )
     max_episode_steps: PositiveInt = Field(
-        default=25, ge=5, le=200, description="Step budget per episode."
+        default=100, ge=5, le=200, description="Step budget per episode."
     )
     topology_types: List[str] = Field(
         default_factory=lambda: ["star", "mesh", "hierarchical"],

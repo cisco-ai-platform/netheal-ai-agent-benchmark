@@ -6,7 +6,8 @@
 Purple Agent A2A Server.
 
 Implements the AAA protocol for solver agents:
-    GET  /.well-known/agent.json - Agent capability card
+    GET  /.well-known/agent.json       - Agent capability card
+    GET  /.well-known/agent-card.json  - Legacy agent card alias
     POST /tasks                  - Receive episode from green agent
     GET  /tasks/{id}             - Task status
     GET  /tasks/{id}/stream      - SSE stream for LLM trace events
@@ -148,6 +149,12 @@ async def agent_card() -> JSONResponse:
     if _CARD_URL:
         card["url"] = _CARD_URL
     return JSONResponse(card)
+
+
+@app.get("/.well-known/agent-card.json")
+async def agent_card_legacy() -> JSONResponse:
+    """Return the agent capability card (legacy path)."""
+    return await agent_card()
 
 
 @app.post("/tasks")

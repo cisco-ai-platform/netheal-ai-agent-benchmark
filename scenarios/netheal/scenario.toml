@@ -21,14 +21,36 @@ image = "netheal-purple-agent:latest"
 # For AgentBeats platform, use agentbeats_id instead:
 # agentbeats_id = "YOUR-PURPLE-AGENT-UUID"
 name = "netheal-solver"
-solver = "gpt"  # Options: "gpt" (requires Azure OpenAI), "dummy" (random baseline)
-env = { AZURE_OPENAI_API_KEY = "${AZURE_OPENAI_API_KEY}", AZURE_OPENAI_ENDPOINT = "${AZURE_OPENAI_ENDPOINT}", AZURE_OPENAI_DEPLOYMENT = "${AZURE_OPENAI_DEPLOYMENT}", AZURE_OPENAI_API_VERSION = "${AZURE_OPENAI_API_VERSION}" }
+solver = "gpt"  # Options: "gpt" (requires LLM provider env vars), "dummy" (random baseline)
+env = {
+  # Provider selection: azure | openai | anthropic (auto-detected if unset)
+  LLM_PROVIDER = "${LLM_PROVIDER}",
+  LLM_MODEL = "${LLM_MODEL}",
+  OPENAI_API_KEY = "${OPENAI_API_KEY}",
+  OPENAI_MODEL = "${OPENAI_MODEL}",
+  OPENAI_BASE_URL = "${OPENAI_BASE_URL}",
+  OPENAI_ORG_ID = "${OPENAI_ORG_ID}",
+  ANTHROPIC_API_KEY = "${ANTHROPIC_API_KEY}",
+  ANTHROPIC_MODEL = "${ANTHROPIC_MODEL}",
+  ANTHROPIC_API_URL = "${ANTHROPIC_API_URL}",
+  AWS_REGION = "${AWS_REGION}",
+  AWS_ACCESS_KEY_ID = "${AWS_ACCESS_KEY_ID}",
+  AWS_SECRET_ACCESS_KEY = "${AWS_SECRET_ACCESS_KEY}",
+  AWS_SESSION_TOKEN = "${AWS_SESSION_TOKEN}",
+  BEDROCK_MODEL_ID = "${BEDROCK_MODEL_ID}",
+  AZURE_OPENAI_API_KEY = "${AZURE_OPENAI_API_KEY}",
+  AZURE_OPENAI_ENDPOINT = "${AZURE_OPENAI_ENDPOINT}",
+  AZURE_OPENAI_DEPLOYMENT = "${AZURE_OPENAI_DEPLOYMENT}",
+  AZURE_OPENAI_API_VERSION = "${AZURE_OPENAI_API_VERSION}",
+  REASONING_EFFORT = "${REASONING_EFFORT}",
+}
 
 [config]
 # Assessment configuration
 num_episodes = 5
-max_devices = 8
-max_episode_steps = 200
+min_devices = 3
+max_devices = 15
+max_episode_steps = 100
 topology_types = ["star", "mesh", "hierarchical"]
 timeout_seconds = 300
 seed = 1234

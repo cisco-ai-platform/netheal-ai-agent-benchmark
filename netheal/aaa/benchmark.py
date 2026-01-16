@@ -240,9 +240,9 @@ async def run_benchmark(
     solver_type: str,
     num_episodes: int,
     seed: Optional[int] = None,
-    max_devices: int = 6,
-    max_steps: int = 25,
-    max_turns: int = 25,
+    max_devices: int = 15,
+    max_steps: int = 100,
+    max_turns: int = 100,
     verbose: bool = False,
     parallel: bool = False,
 ) -> BenchmarkResults:

@@ -313,8 +313,8 @@ async function doReset(evt) {
   evt.preventDefault();
   const payload = {
     seed: els.seed.value ? Number(els.seed.value) : null,
-    max_devices: Number(els.maxDevices.value || 8),
-    max_episode_steps: Number(els.maxSteps.value || 20),
+    max_devices: Number(els.maxDevices.value || 15),
+    max_episode_steps: Number(els.maxSteps.value || 100),
     topology_types: null,
     enable_user_hints: els.enableHints.value === 'true',
     hint_provider_mode: els.hintMode.value || 'auto',

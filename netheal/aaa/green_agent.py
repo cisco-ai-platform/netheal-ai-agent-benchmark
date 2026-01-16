@@ -138,6 +138,7 @@ class NetHealGreenAgent:
         waits for diagnosis submission, and collects metrics.
         """
         env = NetworkTroubleshootingEnv(
+            min_devices=self.config.min_devices,
             max_devices=self.config.max_devices,
             max_episode_steps=self.config.max_episode_steps,
             topology_types=self.config.topology_types,
@@ -216,6 +217,7 @@ class NetHealGreenAgent:
                     "metrics": {
                         "diagnosis_success": metrics.diagnosis_success,
                         "steps": metrics.steps,
+                        "total_reward": metrics.total_reward,
                         "composite_episode_score": metrics.composite_episode_score,
                     },
                 },

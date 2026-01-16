@@ -223,6 +223,25 @@ class NetHealMCPServer:
                 tool_params={"fault_type": fault_type, "location": location},
             )
 
+            if "error" in result and fault_enum in {
+                FaultType.LINK_FAILURE,
+                FaultType.PERFORMANCE_DEGRADATION,
+            }:
+                reversed_location = self._reverse_link_location(location)
+                if reversed_location:
+                    result = await self._execute_by_predicate(
+                        predicate=lambda spec: spec.category == ActionCategory.DIAGNOSIS
+                        and spec.action_type == fault_enum
+                        and spec.parameters.get("location") == reversed_location,
+                        error_message=f"No diagnosis action for {fault_type} at {location}.",
+                        tool_name="submit_diagnosis",
+                        tool_params={
+                            "fault_type": fault_type,
+                            "location": reversed_location,
+                            "requested_location": location,
+                        },
+                    )
+
             if "error" not in result:
                 self._diagnosis_submitted = True
 
@@ -401,6 +420,19 @@ class NetHealMCPServer:
                 error_message=f"No diagnosis action for {fault_type} at {location}.",
             )
 
+            if "error" in result and fault_enum in {
+                FaultType.LINK_FAILURE,
+                FaultType.PERFORMANCE_DEGRADATION,
+            }:
+                reversed_location = self._reverse_link_location(location)
+                if reversed_location:
+                    result = await self._execute_by_predicate(
+                        predicate=lambda spec: spec.category == ActionCategory.DIAGNOSIS
+                        and spec.action_type == fault_enum
+                        and spec.parameters.get("location") == reversed_location,
+                error_message=f"No diagnosis action for {fault_type} at {location}.",
+            )
+
             if "error" not in result:
                 self._diagnosis_submitted = True
 
@@ -521,6 +553,15 @@ class NetHealMCPServer:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
             sock.bind((host, 0))
             return sock.getsockname()[1]
+
+    @staticmethod
+    def _reverse_link_location(location: str) -> Optional[str]:
+        if "->" not in location:
+            return None
+        parts = [part.strip() for part in location.split("->") if part.strip()]
+        if len(parts) != 2:
+            return None
+        return f"{parts[1]}->{parts[0]}"
 
 
 def _sanitize_info_for_solver(info: Dict[str, Any]) -> Dict[str, Any]:

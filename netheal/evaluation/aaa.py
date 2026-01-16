@@ -64,9 +64,12 @@ def build_aaa_payload(
             "time_used": summary.get("avg_wall_time_seconds", 0.0),
             "max_score": 100.0,
             "total_episodes": summary.get("episodes", 0),
-            "composite_score": summary.get("composite_episode_score", 0.0),
+            "composite_score": summary.get(
+                "avg_total_reward", summary.get("composite_episode_score", 0.0)
+            ),
             "diagnosis_success_rate": summary.get("diagnosis_success_rate", 0.0),
             "fault_type_macro_f1": summary.get("fault_type_macro_f1", 0.0),
+            "avg_total_reward": summary.get("avg_total_reward", 0.0),
             "avg_steps": summary.get("avg_steps", 0.0),
             "normalized_steps": summary.get("normalized_steps", 0.0),
             "tool_cost_index": summary.get("tool_cost_index", 0.0),
@@ -90,7 +93,7 @@ def _episode_to_result(episode: EpisodeMetrics) -> Dict[str, Any]:
         "time_used": episode.wall_time_seconds,
         "steps": episode.steps,
         "max_score": 100.0,
-        "score": episode.composite_episode_score * 100.0,
+        "score": episode.total_reward,
         "network_size": episode.network_size,
         "tool_cost": episode.tool_cost,
         "tool_cost_normalized": episode.tool_cost_normalized,

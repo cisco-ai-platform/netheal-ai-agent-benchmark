@@ -1,7 +1,7 @@
 [
   {
     "name": "Overall Performance",
-    "query": "SELECT id, ROUND(pass_rate * 100, 1) AS \"Pass Rate %\", ROUND(composite_score, 1) AS \"Score\", ROUND(avg_steps, 1) AS \"Avg Steps\", total_episodes AS \"# Episodes\" FROM (SELECT *, ROW_NUMBER() OVER (PARTITION BY id ORDER BY pass_rate DESC, composite_score DESC) AS rn FROM (SELECT results.participants.solver AS id, res.summary.pass_rate AS pass_rate, res.summary.composite_score AS composite_score, res.summary.avg_steps AS avg_steps, res.summary.total_episodes AS total_episodes FROM results CROSS JOIN UNNEST(ARRAY[results]) AS r(res))) WHERE rn = 1 ORDER BY pass_rate DESC, composite_score DESC;"
+    "query": "SELECT id, ROUND(avg_reward, 2) AS \"Avg Reward\", ROUND(avg_steps, 1) AS \"Avg Steps\", ROUND(pass_rate * 100, 1) AS \"Pass Rate %\", total_episodes AS \"# Episodes\" FROM (SELECT *, ROW_NUMBER() OVER (PARTITION BY id ORDER BY avg_reward DESC, avg_steps ASC) AS rn FROM (SELECT results.participants.solver AS id, results.summary.avg_total_reward AS avg_reward, results.summary.avg_steps AS avg_steps, results.summary.diagnosis_success_rate AS pass_rate, results.summary.total_episodes AS total_episodes FROM results)) WHERE rn = 1 ORDER BY avg_reward DESC, avg_steps ASC;"
   },
   {
     "name": "Diagnosis Accuracy",

@@ -10,10 +10,10 @@ of the troubleshooting process rather than intermediate achievements.
 Enhanced with partial rewards for correct device identification.
 """
 
-from typing import Dict, Tuple, List
+from typing import Dict, Tuple, List, Optional
 
 from .actions import ActionSpec, ActionCategory
-from ..faults.injector import FaultInfo
+from ..faults.injector import FaultInfo, FaultType
 
 
 class SparseRewardCalculator:
@@ -75,7 +75,9 @@ class SparseRewardCalculator:
             # Check if the diagnosis is completely correct
             if (
                 diagnosed_fault == ground_truth.fault_type
-                and diagnosed_location == ground_truth.location
+                and self._locations_match(
+                    diagnosed_fault, diagnosed_location, ground_truth.location
+                )
             ):
                 base_reward = self.correct_diagnosis_reward
                 # Scale the reward based on the network size to account for difficulty
@@ -147,6 +149,34 @@ class SparseRewardCalculator:
             partial_reward = base_reward * self.partial_device_reward_rate * correct_devices * scaling_multiplier
             
         return partial_reward
+
+    def _locations_match(
+        self,
+        diagnosed_fault: FaultType,
+        diagnosed_location: Optional[str],
+        ground_truth_location: Optional[str],
+    ) -> bool:
+        if not diagnosed_location or not ground_truth_location:
+            return False
+
+        if diagnosed_fault in (
+            FaultType.LINK_FAILURE,
+            FaultType.PERFORMANCE_DEGRADATION,
+        ):
+            diagnosed_link = self._normalize_link_location(diagnosed_location)
+            ground_truth_link = self._normalize_link_location(ground_truth_location)
+            if diagnosed_link and ground_truth_link:
+                return diagnosed_link == ground_truth_link
+        return diagnosed_location == ground_truth_location
+
+    @staticmethod
+    def _normalize_link_location(location: str) -> Optional[tuple[str, str]]:
+        if "->" not in location:
+            return None
+        parts = [part.strip() for part in location.split("->") if part.strip()]
+        if len(parts) != 2:
+            return None
+        return tuple(sorted(parts))
     
     def _extract_devices_from_location(self, location: str) -> List[str]:
         """

@@ -141,6 +141,7 @@ class CompetitionEvaluator:
         )
         avg_normalized_steps = _weighted_avg([m.normalized_steps for m in self.episodes])
         avg_steps = _weighted_avg([float(m.steps) for m in self.episodes])
+        avg_total_reward = _weighted_avg([m.total_reward for m in self.episodes])
         avg_tool_cost = _weighted_avg([m.tool_cost_normalized for m in self.episodes])
         avg_topology_coverage = _weighted_avg([m.topology_coverage for m in self.episodes])
         avg_evidence = _weighted_avg([m.evidence_sufficiency for m in self.episodes])
@@ -156,6 +157,7 @@ class CompetitionEvaluator:
             "diagnosis_success_rate": diagnosis_success_rate,
             "fault_type_macro_f1": macro_f1,
             "avg_steps": avg_steps,
+            "avg_total_reward": avg_total_reward,
             "normalized_steps": avg_normalized_steps,
             "composite_episode_score": avg_composite,
             "tool_cost_index": avg_tool_cost,
@@ -203,12 +205,8 @@ def compute_episode_metrics(trace: EpisodeTrace) -> EpisodeMetrics:
         predicted_type, predicted_location, trace.ground_truth, trace.final_info
     )
 
-    # Composite score: successful episodes always outrank failures
-    efficiency = 1.0 - normalized_steps  # Higher is better (fewer steps)
-    if diagnosis_success:
-        composite_score = 0.5 + 0.5 * efficiency
-    else:
-        composite_score = 0.25 * efficiency
+    # Composite score favors the environment reward; step penalties are already included.
+    composite_score = total_reward
 
     return EpisodeMetrics(
         diagnosis_success=diagnosis_success,
@@ -249,11 +247,37 @@ def _diagnosis_success(
         if reward_breakdown.get("diagnosis_reward", 0.0) > 0:
             return True
 
-    # Require exact match of both type and location
-    return (
-        predicted_type == ground_truth.get("type")
-        and predicted_location == ground_truth.get("location")
-    )
+    # Require exact match of type and location (order-insensitive for link faults)
+    gt_type = ground_truth.get("type")
+    gt_location = ground_truth.get("location")
+    if predicted_type != gt_type:
+        return False
+
+    if gt_type in {"link_failure", "performance_degradation"}:
+        return _link_locations_match(predicted_location, gt_location)
+
+    return predicted_location == gt_location
+
+
+def _link_locations_match(
+    predicted_location: Optional[str], ground_truth_location: Optional[str]
+) -> bool:
+    if not predicted_location or not ground_truth_location:
+        return False
+    predicted = _normalize_link_location(predicted_location)
+    ground_truth = _normalize_link_location(ground_truth_location)
+    if predicted and ground_truth:
+        return predicted == ground_truth
+    return predicted_location == ground_truth_location
+
+
+def _normalize_link_location(location: str) -> Optional[Tuple[str, str]]:
+    if "->" not in location:
+        return None
+    parts = [part.strip() for part in location.split("->") if part.strip()]
+    if len(parts) != 2:
+        return None
+    return tuple(sorted(parts))
 
 
 def _estimate_action_cost(action: ActionRecord) -> float:

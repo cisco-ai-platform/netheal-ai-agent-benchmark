@@ -11,8 +11,8 @@ from pydantic import BaseModel, Field
 
 class ResetRequest(BaseModel):
     seed: Optional[int] = Field(default=None, description="Random seed")
-    max_devices: int = Field(default=8, ge=2, le=50)
-    max_episode_steps: int = Field(default=20, ge=1, le=200)
+    max_devices: int = Field(default=15, ge=3, le=50)
+    max_episode_steps: int = Field(default=100, ge=1, le=200)
     topology_types: Optional[List[str]] = None
     enable_user_hints: bool = True
     hint_provider_mode: str = Field(default="auto")

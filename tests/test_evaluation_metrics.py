@@ -96,6 +96,37 @@ def test_compute_episode_metrics_basic():
     assert metrics.composite_episode_score > 0.0
 
 
+def test_link_failure_location_order_ignored():
+    trace = EpisodeTrace(
+        ground_truth={"type": "link_failure", "location": "device_a->device_b"},
+        network_size=2,
+        max_episode_steps=10,
+        network_devices=["device_a", "device_b"],
+        network_edges=[("device_a", "device_b"), ("device_b", "device_a")],
+        start_time=0.0,
+    )
+    trace.discovered_nodes = 2
+    trace.discovered_edges = 2
+    trace.total_reward = 5.0
+    trace.start_time = 0.0
+    trace.end_time = 4.0
+    trace.final_info = {"reward_breakdown": {"diagnosis_reward": 0.0}}
+
+    trace.actions = [
+        _make_action(
+            1,
+            "diagnosis",
+            "link_failure",
+            {"location": "device_b->device_a"},
+            reward=10.0,
+            terminated=True,
+        ),
+    ]
+
+    metrics = compute_episode_metrics(trace)
+    assert metrics.diagnosis_success is True
+
+
 def test_competition_evaluator_summary():
     evaluator = CompetitionEvaluator()
     evaluator.add_episode_metrics(

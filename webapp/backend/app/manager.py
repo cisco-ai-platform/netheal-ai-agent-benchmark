@@ -51,8 +51,8 @@ class EnvManager(metaclass=_Singleton):
 
     def reset(self,
               seed: Optional[int] = None,
-              max_devices: int = 8,
-              max_episode_steps: int = 20,
+              max_devices: int = 15,
+              max_episode_steps: int = 100,
               topology_types: Optional[List[str]] = None,
               enable_user_hints: bool = True,
               hint_provider_mode: str = "auto",
