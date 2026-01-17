@@ -54,6 +54,7 @@ class EpisodeOutcome:
     metrics: Optional[EpisodeMetrics]
     timed_out: bool = False
     error: Optional[str] = None
+    attempts: int = 1
 
 
 class NetHealGreenAgent:
@@ -89,13 +90,37 @@ class NetHealGreenAgent:
         )
 
         episode_results: Dict[int, EpisodeOutcome] = {}
-        for episode_idx in range(self.config.num_episodes):
-            await self._emit_update(
-                message=f"Preparing episode {episode_idx + 1}/{self.config.num_episodes}",
-                payload={"episode_index": episode_idx},
-            )
-            result = await self._run_single_episode(episode_idx)
-            episode_results[episode_idx] = result
+        concurrency = max(1, min(self.config.episode_concurrency, self.config.num_episodes))
+        await self._emit_update(
+            message=f"Running {self.config.num_episodes} episodes with concurrency {concurrency}.",
+            payload={"episode_concurrency": concurrency},
+        )
+
+        if concurrency == 1:
+            for episode_idx in range(self.config.num_episodes):
+                await self._emit_update(
+                    message=f"Preparing episode {episode_idx + 1}/{self.config.num_episodes}",
+                    payload={"episode_index": episode_idx},
+                )
+                result = await self._run_episode_with_retries(episode_idx)
+                episode_results[episode_idx] = result
+        else:
+            semaphore = asyncio.Semaphore(concurrency)
+
+            async def run_episode(episode_idx: int) -> None:
+                async with semaphore:
+                    await self._emit_update(
+                        message=f"Preparing episode {episode_idx + 1}/{self.config.num_episodes}",
+                        payload={"episode_index": episode_idx},
+                    )
+                    result = await self._run_episode_with_retries(episode_idx)
+                    episode_results[episode_idx] = result
+
+            tasks = [
+                asyncio.create_task(run_episode(episode_idx))
+                for episode_idx in range(self.config.num_episodes)
+            ]
+            await asyncio.gather(*tasks)
 
         payload = self._build_final_payload()
         artifacts = [
@@ -109,13 +134,28 @@ class NetHealGreenAgent:
             "episodes": self.evaluator.compute_summary(),
             "timeouts": sum(1 for outcome in episode_results.values() if outcome.timed_out),
             "errors": [o.error for o in episode_results.values() if o.error],
+            "retries_used": sum(max(0, o.attempts - 1) for o in episode_results.values()),
+            "episodes_retried": sum(1 for o in episode_results.values() if o.attempts > 1),
         }
 
-        status = (
-            TaskStatus.COMPLETED
-            if not summary["errors"] and summary["timeouts"] == 0
-            else TaskStatus.FAILED
+        def _exceeds_limit(
+            count: int, limit: Optional[int], fail_on_any: bool
+        ) -> bool:
+            if limit is not None:
+                return count > limit
+            if fail_on_any:
+                return count > 0
+            return False
+
+        timeout_count = summary["timeouts"]
+        error_count = len(summary["errors"])
+        fail_timeouts = _exceeds_limit(
+            timeout_count, self.config.max_timeouts, self.config.fail_on_timeout
         )
+        fail_errors = _exceeds_limit(
+            error_count, self.config.max_errors, self.config.fail_on_error
+        )
+        status = TaskStatus.FAILED if (fail_timeouts or fail_errors) else TaskStatus.COMPLETED
 
         await self._emit_update(
             message="Assessment finished.",
@@ -129,6 +169,35 @@ class NetHealGreenAgent:
             artifacts=artifacts,
             metadata={"participants": list(self.assessment.participants.keys())},
         )
+
+    async def _run_episode_with_retries(self, episode_index: int) -> EpisodeOutcome:
+        """Run an episode with optional retries on timeout or error."""
+        max_attempts = self.config.episode_retry_limit + 1
+        last_outcome: Optional[EpisodeOutcome] = None
+
+        for attempt in range(max_attempts):
+            if attempt > 0:
+                await self._emit_update(
+                    message=(
+                        f"Retrying episode {episode_index + 1}/{self.config.num_episodes} "
+                        f"(attempt {attempt + 1}/{max_attempts})"
+                    ),
+                    level=TaskUpdateLevel.WARNING,
+                    payload={
+                        "episode_index": episode_index,
+                        "attempt": attempt + 1,
+                        "max_attempts": max_attempts,
+                    },
+                )
+
+            outcome = await self._run_single_episode(episode_index)
+            outcome.attempts = attempt + 1
+            last_outcome = outcome
+
+            if not outcome.timed_out and not outcome.error:
+                return outcome
+
+        return last_outcome or EpisodeOutcome(metrics=None, error="Episode failed to run.")
 
     async def _run_single_episode(self, episode_index: int) -> EpisodeOutcome:
         """

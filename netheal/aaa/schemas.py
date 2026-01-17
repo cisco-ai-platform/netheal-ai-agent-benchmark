@@ -58,7 +58,31 @@ class AssessmentConfig(BaseModel):
     )
     timeout_seconds: PositiveInt = Field(
         default=300,
-        description="Max wall-clock time per assessment.",
+        description="Max wall-clock time per episode.",
+    )
+    episode_concurrency: PositiveInt = Field(
+        default=1,
+        description="Number of episodes to run concurrently.",
+    )
+    episode_retry_limit: NonNegativeInt = Field(
+        default=0,
+        description="Retries per episode on timeout or error.",
+    )
+    fail_on_timeout: bool = Field(
+        default=True,
+        description="Fail assessment if any episode times out (unless max_timeouts is set).",
+    )
+    fail_on_error: bool = Field(
+        default=True,
+        description="Fail assessment if any episode errors (unless max_errors is set).",
+    )
+    max_timeouts: Optional[NonNegativeInt] = Field(
+        default=None,
+        description="Allow up to this many episode timeouts before failing.",
+    )
+    max_errors: Optional[NonNegativeInt] = Field(
+        default=None,
+        description="Allow up to this many episode errors before failing.",
     )
     enable_user_hints: bool = Field(
         default=True, description="Provide non-leaky hints to solver agents."
