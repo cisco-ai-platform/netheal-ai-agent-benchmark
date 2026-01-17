@@ -929,6 +929,7 @@ class GPTAgent:
     def _build_bedrock_messages(self) -> tuple[Optional[str], List[Dict[str, Any]]]:
         system: Optional[str] = None
         messages: List[Dict[str, Any]] = []
+        pending_tool_results: List[Dict[str, Any]] = []
 
         for msg in self.messages:
             role = msg.get("role")
@@ -936,6 +937,9 @@ class GPTAgent:
                 system = msg.get("content")
                 continue
             if role == "user":
+                if pending_tool_results:
+                    messages.append({"role": "user", "content": pending_tool_results})
+                    pending_tool_results = []
                 content = msg.get("content", "")
                 messages.append({
                     "role": "user",
@@ -943,6 +947,9 @@ class GPTAgent:
                 })
                 continue
             if role == "assistant":
+                if pending_tool_results:
+                    messages.append({"role": "user", "content": pending_tool_results})
+                    pending_tool_results = []
                 blocks: List[Dict[str, Any]] = []
                 content = msg.get("content")
                 if content:
@@ -979,17 +986,15 @@ class GPTAgent:
                     tool_content.append({"json": payload})
                 else:
                     tool_content.append({"text": str(content)})
-                messages.append({
-                    "role": "user",
-                    "content": [
-                        {
-                            "toolResult": {
-                                "toolUseId": tool_id,
-                                "content": tool_content,
-                            }
-                        }
-                    ],
+                pending_tool_results.append({
+                    "toolResult": {
+                        "toolUseId": tool_id,
+                        "content": tool_content,
+                    }
                 })
+
+        if pending_tool_results:
+            messages.append({"role": "user", "content": pending_tool_results})
 
         return system, messages
 
