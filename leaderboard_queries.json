@@ -1,15 +1,15 @@
 [
   {
     "name": "Overall Performance",
-    "query": "SELECT id, ROUND(avg_reward, 2) AS \"Avg Reward\", ROUND(avg_steps, 1) AS \"Avg Steps\", ROUND(pass_rate * 100, 1) AS \"Pass Rate %\", total_episodes AS \"# Episodes\" FROM (SELECT *, ROW_NUMBER() OVER (PARTITION BY id ORDER BY avg_reward DESC, avg_steps ASC) AS rn FROM (SELECT json_extract_string(to_json(results.participants), '$.*[0]') AS id, results.summary.episodes.avg_total_reward AS avg_reward, results.summary.episodes.avg_steps AS avg_steps, results.summary.episodes.diagnosis_success_rate AS pass_rate, results.summary.episodes.episodes AS total_episodes FROM results)) WHERE rn = 1 ORDER BY avg_reward DESC, avg_steps ASC;"
+    "query": "SELECT id, ROUND(avg_reward, 2) AS \"Avg Reward\", ROUND(avg_steps, 1) AS \"Avg Steps\", ROUND(pass_rate * 100, 1) AS \"Pass Rate %\", total_episodes AS \"# Episodes\" FROM (SELECT *, ROW_NUMBER() OVER (PARTITION BY id ORDER BY avg_reward DESC, avg_steps ASC) AS rn FROM (SELECT json_extract_string(to_json(res.participants), '$.*[0]') AS id, r.summary.episodes.avg_total_reward AS avg_reward, r.summary.episodes.avg_steps AS avg_steps, r.summary.episodes.diagnosis_success_rate AS pass_rate, r.summary.episodes.episodes AS total_episodes FROM results AS res, UNNEST(res.results) AS t(r))) WHERE rn = 1 ORDER BY avg_reward DESC, avg_steps ASC;"
   },
   {
     "name": "Diagnosis Accuracy",
-    "query": "SELECT id, ROUND(diagnosis_rate * 100, 1) AS \"Diagnosis %\", ROUND(f1_score * 100, 1) AS \"F1 Score %\", total_episodes AS \"# Episodes\" FROM (SELECT *, ROW_NUMBER() OVER (PARTITION BY id ORDER BY diagnosis_rate DESC) AS rn FROM (SELECT json_extract_string(to_json(results.participants), '$.*[0]') AS id, results.summary.episodes.diagnosis_success_rate AS diagnosis_rate, results.summary.episodes.fault_type_macro_f1 AS f1_score, results.summary.episodes.episodes AS total_episodes FROM results)) WHERE rn = 1 ORDER BY diagnosis_rate DESC, f1_score DESC;"
+    "query": "SELECT id, ROUND(diagnosis_rate * 100, 1) AS \"Diagnosis %\", ROUND(f1_score * 100, 1) AS \"F1 Score %\", total_episodes AS \"# Episodes\" FROM (SELECT *, ROW_NUMBER() OVER (PARTITION BY id ORDER BY diagnosis_rate DESC) AS rn FROM (SELECT json_extract_string(to_json(res.participants), '$.*[0]') AS id, r.summary.episodes.diagnosis_success_rate AS diagnosis_rate, r.summary.episodes.fault_type_macro_f1 AS f1_score, r.summary.episodes.episodes AS total_episodes FROM results AS res, UNNEST(res.results) AS t(r))) WHERE rn = 1 ORDER BY diagnosis_rate DESC, f1_score DESC;"
   },
   {
     "name": "Efficiency Metrics",
-    "query": "SELECT id, ROUND(avg_steps, 1) AS \"Avg Steps\", ROUND(tool_cost * 100, 1) AS \"Tool Cost %\", ROUND(topology_cov * 100, 1) AS \"Coverage %\" FROM (SELECT *, ROW_NUMBER() OVER (PARTITION BY id ORDER BY avg_steps ASC) AS rn FROM (SELECT json_extract_string(to_json(results.participants), '$.*[0]') AS id, results.summary.episodes.avg_steps AS avg_steps, results.summary.episodes.tool_cost_index AS tool_cost, results.summary.episodes.topology_coverage AS topology_cov FROM results)) WHERE rn = 1 ORDER BY avg_steps ASC;"
+    "query": "SELECT id, ROUND(avg_steps, 1) AS \"Avg Steps\", ROUND(tool_cost * 100, 1) AS \"Tool Cost %\", ROUND(topology_cov * 100, 1) AS \"Coverage %\" FROM (SELECT *, ROW_NUMBER() OVER (PARTITION BY id ORDER BY avg_steps ASC) AS rn FROM (SELECT json_extract_string(to_json(res.participants), '$.*[0]') AS id, r.summary.episodes.avg_steps AS avg_steps, r.summary.episodes.tool_cost_index AS tool_cost, r.summary.episodes.topology_coverage AS topology_cov FROM results AS res, UNNEST(res.results) AS t(r))) WHERE rn = 1 ORDER BY avg_steps ASC;"
   }
 ]
 
