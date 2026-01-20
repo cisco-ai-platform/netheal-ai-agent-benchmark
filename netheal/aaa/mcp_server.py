@@ -206,13 +206,24 @@ class NetHealMCPServer:
         )
         async def tool_submit_diagnosis(fault_type: str, location: str) -> Dict[str, Any]:
             if self._diagnosis_submitted:
-                return {"error": "Diagnosis already submitted."}
+                return _tool_error(
+                    code="diagnosis_already_submitted",
+                    message="Diagnosis already submitted.",
+                    tool_name="submit_diagnosis",
+                    tool_params={"fault_type": fault_type, "location": location},
+                )
 
             try:
                 fault_enum = FaultType(fault_type)
             except ValueError:
                 valid = [ft.value for ft in FaultType]
-                return {"error": f"Invalid fault_type '{fault_type}'. Valid: {valid}"}
+                return _tool_error(
+                    code="invalid_fault_type",
+                    message=f"Invalid fault_type '{fault_type}'.",
+                    tool_name="submit_diagnosis",
+                    tool_params={"fault_type": fault_type, "location": location},
+                    details={"valid_fault_types": valid},
+                )
 
             result = await self._execute_by_predicate(
                 predicate=lambda spec: spec.category == ActionCategory.DIAGNOSIS
@@ -350,11 +361,22 @@ class NetHealMCPServer:
         @self._mcp.custom_route("/tools/discover_neighbors", methods=["POST"], name="discover_neighbors")
         async def http_discover_neighbors(request: Request) -> JSONResponse:
             device = request.query_params.get("device", "")
+            if not device:
+                return JSONResponse(
+                    _tool_error(
+                        code="invalid_params",
+                        message="Missing required parameter: device.",
+                        tool_name="discover_neighbors",
+                        tool_params={"device": device},
+                    )
+                )
             result = await self._execute_by_predicate(
                 predicate=lambda spec: spec.category == ActionCategory.TOPOLOGY_DISCOVERY
                 and spec.action_type == TopologyAction.DISCOVER_NEIGHBORS
                 and spec.parameters.get("device") == device,
                 error_message=f"No discover_neighbors action for '{device}'.",
+                tool_name="discover_neighbors",
+                tool_params={"device": device},
             )
             return JSONResponse(result)
 
@@ -362,6 +384,15 @@ class NetHealMCPServer:
         async def http_ping(request: Request) -> JSONResponse:
             source = request.query_params.get("source", "")
             destination = request.query_params.get("destination", "")
+            if not source or not destination:
+                return JSONResponse(
+                    _tool_error(
+                        code="invalid_params",
+                        message="Missing required parameters: source, destination.",
+                        tool_name="ping",
+                        tool_params={"source": source, "destination": destination},
+                    )
+                )
             result = await self._diagnostic_action(DiagnosticAction.PING, source, destination)
             return JSONResponse(result)
 
@@ -369,28 +400,59 @@ class NetHealMCPServer:
         async def http_traceroute(request: Request) -> JSONResponse:
             source = request.query_params.get("source", "")
             destination = request.query_params.get("destination", "")
+            if not source or not destination:
+                return JSONResponse(
+                    _tool_error(
+                        code="invalid_params",
+                        message="Missing required parameters: source, destination.",
+                        tool_name="traceroute",
+                        tool_params={"source": source, "destination": destination},
+                    )
+                )
             result = await self._diagnostic_action(DiagnosticAction.TRACEROUTE, source, destination)
             return JSONResponse(result)
 
         @self._mcp.custom_route("/tools/check_status", methods=["POST"], name="check_status")
         async def http_check_status(request: Request) -> JSONResponse:
             device = request.query_params.get("device", "")
+            if not device:
+                return JSONResponse(
+                    _tool_error(
+                        code="invalid_params",
+                        message="Missing required parameter: device.",
+                        tool_name="check_status",
+                        tool_params={"device": device},
+                    )
+                )
             result = await self._execute_by_predicate(
                 predicate=lambda spec: spec.category == ActionCategory.DIAGNOSTIC
                 and spec.action_type == DiagnosticAction.CHECK_STATUS
                 and spec.parameters.get("device") == device,
                 error_message=f"No check_status action for '{device}'.",
+                tool_name="check_status",
+                tool_params={"device": device},
             )
             return JSONResponse(result)
 
         @self._mcp.custom_route("/tools/check_interfaces", methods=["POST"], name="check_interfaces")
         async def http_check_interfaces(request: Request) -> JSONResponse:
             device = request.query_params.get("device", "")
+            if not device:
+                return JSONResponse(
+                    _tool_error(
+                        code="invalid_params",
+                        message="Missing required parameter: device.",
+                        tool_name="check_interfaces",
+                        tool_params={"device": device},
+                    )
+                )
             result = await self._execute_by_predicate(
                 predicate=lambda spec: spec.category == ActionCategory.DIAGNOSTIC
                 and spec.action_type == DiagnosticAction.CHECK_INTERFACES
                 and spec.parameters.get("device") == device,
                 error_message=f"No check_interfaces action for '{device}'.",
+                tool_name="check_interfaces",
+                tool_params={"device": device},
             )
             return JSONResponse(result)
 
@@ -405,13 +467,37 @@ class NetHealMCPServer:
                 location = request.query_params.get("location", "")
 
             if self._diagnosis_submitted:
-                return JSONResponse({"error": "Diagnosis already submitted."})
+                return JSONResponse(
+                    _tool_error(
+                        code="diagnosis_already_submitted",
+                        message="Diagnosis already submitted.",
+                        tool_name="submit_diagnosis",
+                        tool_params={"fault_type": fault_type, "location": location},
+                    )
+                )
 
             try:
                 fault_enum = FaultType(fault_type)
             except ValueError:
                 valid = [ft.value for ft in FaultType]
-                return JSONResponse({"error": f"Invalid fault_type '{fault_type}'. Valid: {valid}"})
+                return JSONResponse(
+                    _tool_error(
+                        code="invalid_fault_type",
+                        message=f"Invalid fault_type '{fault_type}'.",
+                        tool_name="submit_diagnosis",
+                        tool_params={"fault_type": fault_type, "location": location},
+                        details={"valid_fault_types": valid},
+                    )
+                )
+            if not location:
+                return JSONResponse(
+                    _tool_error(
+                        code="invalid_params",
+                        message="Missing required parameter: location.",
+                        tool_name="submit_diagnosis",
+                        tool_params={"fault_type": fault_type, "location": location},
+                    )
+                )
 
             result = await self._execute_by_predicate(
                 predicate=lambda spec: spec.category == ActionCategory.DIAGNOSIS
@@ -474,7 +560,13 @@ class NetHealMCPServer:
             if 0 <= idx < len(specs) and predicate(specs[idx]):
                 return await self._step_env(idx, tool_name=tool_name, tool_params=tool_params)
 
-        return {"error": error_message}
+        return _tool_error(
+            code="action_not_available",
+            message=error_message,
+            tool_name=tool_name or None,
+            tool_params=tool_params,
+            hint="Call list_actions to see valid actions.",
+        )
 
     async def _diagnostic_action(
         self,
@@ -583,6 +675,26 @@ def _sanitize_info_for_solver(info: Dict[str, Any]) -> Dict[str, Any]:
     }
     
     return {k: v for k, v in info.items() if k not in FORBIDDEN_KEYS}
+
+
+def _tool_error(
+    code: str,
+    message: str,
+    tool_name: Optional[str] = None,
+    tool_params: Optional[Dict[str, Any]] = None,
+    details: Optional[Dict[str, Any]] = None,
+    hint: Optional[str] = None,
+) -> Dict[str, Any]:
+    error: Dict[str, Any] = {"code": code, "message": message}
+    if tool_name:
+        error["tool"] = tool_name
+    if tool_params:
+        error["params"] = tool_params
+    if details:
+        error["details"] = details
+    if hint:
+        error["hint"] = hint
+    return {"error": error}
 
 
 def _serialize(obj: Any) -> Any:
