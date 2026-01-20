@@ -55,7 +55,7 @@ class FaultInjector:
     to create troubleshooting scenarios for RL training.
     """
     
-    def __init__(self, network: NetworkGraph):
+    def __init__(self, network: NetworkGraph, rng: Optional[random.Random] = None):
         """
         Initialize fault injector.
         
@@ -63,6 +63,7 @@ class FaultInjector:
             network: NetworkGraph to inject faults into
         """
         self.network = network
+        self.rng = rng or random
         self.active_faults: List[FaultInfo] = []
         
     def inject_random_fault(self, fault_types: List[FaultType] = None) -> FaultInfo:
@@ -78,7 +79,7 @@ class FaultInjector:
         if fault_types is None:
             fault_types = list(FaultType)
             
-        fault_type = random.choice(fault_types)
+        fault_type = self.rng.choice(fault_types)
         
         if fault_type == FaultType.LINK_FAILURE:
             return self.inject_link_failure()
@@ -112,7 +113,7 @@ class FaultInjector:
                             if self.network.is_connection_up(s, d)]
             if not up_connections:
                 raise ValueError("No active connections available for link failure")
-            source, destination = random.choice(up_connections)
+            source, destination = self.rng.choice(up_connections)
         
         # Set connection status to down
         self.network.set_connection_status(source, destination, 'down')
@@ -149,7 +150,7 @@ class FaultInjector:
             up_devices = [d for d in devices if self.network.is_device_up(d)]
             if not up_devices:
                 raise ValueError("No active devices available for device failure")
-            device_id = random.choice(up_devices)
+            device_id = self.rng.choice(up_devices)
         
         # Set device status to down
         self.network.set_device_status(device_id, 'down')
@@ -185,14 +186,14 @@ class FaultInjector:
                         if self.network.get_device_info(d)['device_type'] == DeviceType.FIREWALL]
             
             if firewalls:
-                device_id = random.choice(firewalls)
+                device_id = self.rng.choice(firewalls)
             else:
                 # Use any device with connections
                 devices_with_connections = [d for d in devices 
                                           if self.network.get_device_connections(d)]
                 if not devices_with_connections:
                     raise ValueError("No devices with connections for misconfiguration")
-                device_id = random.choice(devices_with_connections)
+                device_id = self.rng.choice(devices_with_connections)
         
         # Get connections from this device
         connections = self.network.get_device_connections(device_id)
@@ -205,7 +206,7 @@ class FaultInjector:
                             if info.get('status') == 'up']
             if not up_connections:
                 raise ValueError(f"No active connections from {device_id} for misconfiguration")
-            blocked_destination, _ = random.choice(up_connections)
+            blocked_destination, _ = self.rng.choice(up_connections)
         
         # Block the connection (set to down)
         self.network.set_connection_status(device_id, blocked_destination, 'down')
@@ -246,10 +247,10 @@ class FaultInjector:
                             if self.network.is_connection_up(s, d)]
             if not up_connections:
                 raise ValueError("No active connections for performance degradation")
-            source, destination = random.choice(up_connections)
+            source, destination = self.rng.choice(up_connections)
         
         if latency_multiplier is None:
-            latency_multiplier = random.uniform(10.0, 20.0)  # 10x to 20x increase
+            latency_multiplier = self.rng.uniform(10.0, 20.0)  # 10x to 20x increase
         
         # Get current latency and increase it
         current_info = self.network.get_connection_info(source, destination)

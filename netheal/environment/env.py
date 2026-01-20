@@ -107,6 +107,7 @@ class NetworkTroubleshootingEnv(gym.Env):
         self.user_context = user_context or {}
         self.hint_provider = hint_provider
         self.user_hint: Optional[str] = None
+        self._rng: Optional[random.Random] = None
         
         # Action and observation spaces
         self._setup_action_space()
@@ -158,8 +159,9 @@ class NetworkTroubleshootingEnv(gym.Env):
         super().reset(seed=seed)
         
         if seed is not None:
-            random.seed(seed)
-            np.random.seed(seed)
+            self._rng = random.Random(seed)
+        else:
+            self._rng = random.Random()
         
         # Generate new network topology
         self._generate_network()
@@ -174,8 +176,8 @@ class NetworkTroubleshootingEnv(gym.Env):
             self._setup_action_space()
         
         # Initialize components
-        self.fault_injector = FaultInjector(self.network)
-        self.tool_simulator = ToolSimulator(self.network)
+        self.fault_injector = FaultInjector(self.network, rng=self._rng)
+        self.tool_simulator = ToolSimulator(self.network, rng=self._rng)
         
         # Inject a random fault
         self.ground_truth_fault = self.fault_injector.inject_random_fault(self.fault_types)
@@ -278,24 +280,27 @@ class NetworkTroubleshootingEnv(gym.Env):
     
     def _generate_network(self):
         """Generate a random network topology."""
-        num_devices = random.randint(self.min_devices, self.max_devices)
-        topology_type = random.choice(self.topology_types)
+        rng = self._rng or random
+        num_devices = rng.randint(self.min_devices, self.max_devices)
+        topology_type = rng.choice(self.topology_types)
         
         if topology_type == "linear":
-            self.network = TopologyGenerator.generate_linear_topology(num_devices)
+            self.network = TopologyGenerator.generate_linear_topology(num_devices, rng=rng)
         elif topology_type == "star":
-            self.network = TopologyGenerator.generate_star_topology(num_devices - 1)
+            self.network = TopologyGenerator.generate_star_topology(num_devices - 1, rng=rng)
         elif topology_type == "mesh":
-            self.network = TopologyGenerator.generate_mesh_topology(num_devices)
+            self.network = TopologyGenerator.generate_mesh_topology(num_devices, rng=rng)
         elif topology_type == "hierarchical":
-            layers = random.randint(2, 3)
-            devices_per_layer = [random.randint(1, 3) for _ in range(layers)]
-            self.network = TopologyGenerator.generate_hierarchical_topology(layers, devices_per_layer)
+            layers = rng.randint(2, 3)
+            devices_per_layer = [rng.randint(1, 3) for _ in range(layers)]
+            self.network = TopologyGenerator.generate_hierarchical_topology(
+                layers, devices_per_layer, rng=rng
+            )
         elif topology_type == "random":
-            self.network = TopologyGenerator.generate_random_topology(num_devices)
+            self.network = TopologyGenerator.generate_random_topology(num_devices, rng=rng)
         else:
             # Default to random
-            self.network = TopologyGenerator.generate_random_topology(num_devices)
+            self.network = TopologyGenerator.generate_random_topology(num_devices, rng=rng)
     
     def _execute_action(self, action_spec: ActionSpec) -> Optional[DiagnosticResult]:
         """Execute an action and return diagnostic result."""

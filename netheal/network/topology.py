@@ -10,7 +10,7 @@ for training and testing purposes.
 """
 
 import random
-from typing import List, Tuple, Dict, Any
+from typing import List, Tuple, Dict, Any, Optional
 from .graph import NetworkGraph, DeviceType
 
 
@@ -18,7 +18,11 @@ class TopologyGenerator:
     """Generator for various network topologies."""
     
     @staticmethod
-    def generate_linear_topology(num_devices: int, device_types: List[DeviceType] = None) -> NetworkGraph:
+    def generate_linear_topology(
+        num_devices: int,
+        device_types: List[DeviceType] = None,
+        rng: Optional[random.Random] = None,
+    ) -> NetworkGraph:
         """
         Generate a linear topology (chain of devices).
         
@@ -32,6 +36,8 @@ class TopologyGenerator:
         if num_devices < 2:
             raise ValueError("Linear topology requires at least 2 devices")
         
+        rng = rng or random
+
         if device_types is None:
             device_types = [DeviceType.ROUTER, DeviceType.SWITCH, DeviceType.HOST]
         
@@ -40,21 +46,25 @@ class TopologyGenerator:
         # Add devices
         for i in range(num_devices):
             device_id = f"device_{i}"
-            device_type = random.choice(device_types)
+            device_type = rng.choice(device_types)
             network.add_device(device_id, device_type)
         
         # Add connections in chain
         for i in range(num_devices - 1):
             source = f"device_{i}"
             dest = f"device_{i + 1}"
-            bandwidth = random.uniform(10, 1000)  # 10-1000 Mbps
-            latency = random.uniform(0.5, 5.0)    # 0.5-5ms
+            bandwidth = rng.uniform(10, 1000)  # 10-1000 Mbps
+            latency = rng.uniform(0.5, 5.0)    # 0.5-5ms
             network.add_connection(source, dest, bandwidth=bandwidth, latency=latency)
         
         return network
     
     @staticmethod
-    def generate_star_topology(num_edge_devices: int, center_type: DeviceType = DeviceType.ROUTER) -> NetworkGraph:
+    def generate_star_topology(
+        num_edge_devices: int,
+        center_type: DeviceType = DeviceType.ROUTER,
+        rng: Optional[random.Random] = None,
+    ) -> NetworkGraph:
         """
         Generate a star topology with central device.
         
@@ -68,6 +78,7 @@ class TopologyGenerator:
         if num_edge_devices < 1:
             raise ValueError("Star topology requires at least 1 edge device")
         
+        rng = rng or random
         network = NetworkGraph()
         
         # Add central device
@@ -78,17 +89,21 @@ class TopologyGenerator:
         
         for i in range(num_edge_devices):
             device_id = f"edge_{i}"
-            device_type = random.choice(edge_types)
+            device_type = rng.choice(edge_types)
             network.add_device(device_id, device_type)
             
-            bandwidth = random.uniform(10, 1000)
-            latency = random.uniform(0.5, 5.0)
+            bandwidth = rng.uniform(10, 1000)
+            latency = rng.uniform(0.5, 5.0)
             network.add_connection("center", device_id, bandwidth=bandwidth, latency=latency)
         
         return network
     
     @staticmethod
-    def generate_mesh_topology(num_devices: int, connection_probability: float = 0.3) -> NetworkGraph:
+    def generate_mesh_topology(
+        num_devices: int,
+        connection_probability: float = 0.3,
+        rng: Optional[random.Random] = None,
+    ) -> NetworkGraph:
         """
         Generate a partial mesh topology.
         
@@ -102,32 +117,37 @@ class TopologyGenerator:
         if num_devices < 2:
             raise ValueError("Mesh topology requires at least 2 devices")
         
+        rng = rng or random
         network = NetworkGraph()
         device_types = list(DeviceType)
         
         # Add devices
         for i in range(num_devices):
             device_id = f"device_{i}"
-            device_type = random.choice(device_types)
+            device_type = rng.choice(device_types)
             network.add_device(device_id, device_type)
         
         # Add random connections
         devices = [f"device_{i}" for i in range(num_devices)]
         for i in range(num_devices):
             for j in range(i + 1, num_devices):
-                if random.random() < connection_probability:
-                    bandwidth = random.uniform(10, 1000)
-                    latency = random.uniform(0.5, 5.0)
+                if rng.random() < connection_probability:
+                    bandwidth = rng.uniform(10, 1000)
+                    latency = rng.uniform(0.5, 5.0)
                     network.add_connection(devices[i], devices[j], 
                                          bandwidth=bandwidth, latency=latency)
         
         # Ensure connectivity by adding minimum spanning connections
-        TopologyGenerator._ensure_connectivity(network, devices)
+        TopologyGenerator._ensure_connectivity(network, devices, rng=rng)
         
         return network
     
     @staticmethod
-    def generate_hierarchical_topology(num_layers: int = 3, devices_per_layer: List[int] = None) -> NetworkGraph:
+    def generate_hierarchical_topology(
+        num_layers: int = 3,
+        devices_per_layer: List[int] = None,
+        rng: Optional[random.Random] = None,
+    ) -> NetworkGraph:
         """
         Generate a hierarchical topology (e.g., enterprise network).
         
@@ -147,6 +167,7 @@ class TopologyGenerator:
         if len(devices_per_layer) != num_layers:
             raise ValueError("devices_per_layer length must match num_layers")
         
+        rng = rng or random
         network = NetworkGraph()
         
         # Device types for each layer (top to bottom)
@@ -167,7 +188,7 @@ class TopologyGenerator:
             layer_devices = []
             for device_idx in range(devices_per_layer[layer_idx]):
                 device_id = f"L{layer_idx}_D{device_idx}"
-                device_type = random.choice(layer_types[layer_idx])
+                device_type = rng.choice(layer_types[layer_idx])
                 network.add_device(device_id, device_type)
                 layer_devices.append(device_id)
             layers.append(layer_devices)
@@ -180,20 +201,24 @@ class TopologyGenerator:
             # Connect each device in current layer to devices in next layer
             for current_device in current_layer:
                 # Connect to 1-3 devices in next layer
-                num_connections = min(random.randint(1, 3), len(next_layer))
-                connected_devices = random.sample(next_layer, num_connections)
+                num_connections = min(rng.randint(1, 3), len(next_layer))
+                connected_devices = rng.sample(next_layer, num_connections)
                 
                 for next_device in connected_devices:
-                    bandwidth = random.uniform(100, 1000)  # Higher bandwidth for backbone
-                    latency = random.uniform(0.1, 2.0)     # Lower latency for backbone
+                    bandwidth = rng.uniform(100, 1000)  # Higher bandwidth for backbone
+                    latency = rng.uniform(0.1, 2.0)     # Lower latency for backbone
                     network.add_connection(current_device, next_device,
                                          bandwidth=bandwidth, latency=latency)
         
         return network
     
     @staticmethod
-    def generate_random_topology(num_devices: int, min_connections: int = 1, 
-                                max_connections: int = 4) -> NetworkGraph:
+    def generate_random_topology(
+        num_devices: int,
+        min_connections: int = 1,
+        max_connections: int = 4,
+        rng: Optional[random.Random] = None,
+    ) -> NetworkGraph:
         """
         Generate a random topology ensuring connectivity.
         
@@ -208,6 +233,7 @@ class TopologyGenerator:
         if num_devices < 2:
             raise ValueError("Random topology requires at least 2 devices")
         
+        rng = rng or random
         network = NetworkGraph()
         device_types = list(DeviceType)
         
@@ -215,14 +241,14 @@ class TopologyGenerator:
         devices = []
         for i in range(num_devices):
             device_id = f"device_{i}"
-            device_type = random.choice(device_types)
+            device_type = rng.choice(device_types)
             network.add_device(device_id, device_type)
             devices.append(device_id)
         
         # Add random connections
         for device in devices:
             current_connections = len(network.get_device_connections(device))
-            target_connections = random.randint(min_connections, max_connections)
+            target_connections = rng.randint(min_connections, max_connections)
             
             while current_connections < target_connections:
                 # Choose random target that's not already connected
@@ -232,19 +258,23 @@ class TopologyGenerator:
                 if not available_targets:
                     break
                 
-                target = random.choice(available_targets)
-                bandwidth = random.uniform(10, 1000)
-                latency = random.uniform(0.5, 5.0)
+                target = rng.choice(available_targets)
+                bandwidth = rng.uniform(10, 1000)
+                latency = rng.uniform(0.5, 5.0)
                 network.add_connection(device, target, bandwidth=bandwidth, latency=latency)
                 current_connections += 1
         
         # Ensure connectivity
-        TopologyGenerator._ensure_connectivity(network, devices)
+        TopologyGenerator._ensure_connectivity(network, devices, rng=rng)
         
         return network
     
     @staticmethod
-    def _ensure_connectivity(network: NetworkGraph, devices: List[str]) -> None:
+    def _ensure_connectivity(
+        network: NetworkGraph,
+        devices: List[str],
+        rng: Optional[random.Random] = None,
+    ) -> None:
         """Ensure all devices are connected in the network."""
         # Use union-find to check connectivity and add minimum connections
         parent = {device: device for device in devices}
@@ -274,12 +304,13 @@ class TopologyGenerator:
             components[root].append(device)
         
         # Connect components
+        rng = rng or random
         component_list = list(components.values())
         for i in range(len(component_list) - 1):
-            device1 = random.choice(component_list[i])
-            device2 = random.choice(component_list[i + 1])
+            device1 = rng.choice(component_list[i])
+            device2 = rng.choice(component_list[i + 1])
             
             if not network.graph.has_edge(device1, device2):
-                bandwidth = random.uniform(10, 1000)
-                latency = random.uniform(0.5, 5.0)
+                bandwidth = rng.uniform(10, 1000)
+                latency = rng.uniform(0.5, 5.0)
                 network.add_connection(device1, device2, bandwidth=bandwidth, latency=latency)

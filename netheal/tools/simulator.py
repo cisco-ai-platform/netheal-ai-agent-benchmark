@@ -37,7 +37,12 @@ class ToolSimulator:
     encourage efficient troubleshooting.
     """
     
-    def __init__(self, network: NetworkGraph, base_cost: float = 1.0):
+    def __init__(
+        self,
+        network: NetworkGraph,
+        base_cost: float = 1.0,
+        rng: Optional[random.Random] = None,
+    ):
         """
         Initialize tool simulator.
         
@@ -47,6 +52,7 @@ class ToolSimulator:
         """
         self.network = network
         self.base_cost = base_cost
+        self.rng = rng or random
         
         # Tool costs (relative to base_cost)
         self.tool_costs = {
@@ -119,7 +125,7 @@ class ToolSimulator:
         latency = self.network.calculate_path_latency(path)
         
         # Add some random variation to simulate real network conditions
-        jitter = random.uniform(-0.1, 0.1) * latency
+        jitter = self.rng.uniform(-0.1, 0.1) * latency
         measured_latency = max(0.1, latency + jitter)
         
         return ToolResult(
@@ -210,7 +216,7 @@ class ToolSimulator:
                 hop_latency = edge_data.get('latency', 1.0)
                 
                 # Add jitter
-                jitter = random.uniform(-0.05, 0.05) * hop_latency
+                jitter = self.rng.uniform(-0.05, 0.05) * hop_latency
                 measured_hop_latency = max(0.1, hop_latency + jitter)
                 cumulative_latency += measured_hop_latency
                 
