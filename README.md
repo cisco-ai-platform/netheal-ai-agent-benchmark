@@ -349,8 +349,8 @@ netheal/
 │   ├── test_environment.py            # Environment testing
 │   ├── test_actions.py                # Action space testing
 │   └── ...
-├── scenarios/                         # AAA scenario definitions
-│   └── netheal/scenario.toml
+├── scenarios/                         # AAA scenario definitions (local)
+│   └── netheal/local_test.toml
 ├── Dockerfile                         # Docker build for AAA
 ├── docker-compose.yml                 # Local testing orchestration
 ├── requirements.txt                   # Python dependencies

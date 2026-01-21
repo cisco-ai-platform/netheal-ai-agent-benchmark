@@ -12,7 +12,7 @@ for local testing of AgentBeats assessments.
 
 Usage:
     pip install tomli tomli-w requests
-    python generate_compose.py --scenario scenarios/netheal/scenario.toml
+    python generate_compose.py --scenario scenarios/netheal/local_test.toml
     # Optional: create .env with your secrets
     mkdir -p output
     docker compose up --abort-on-container-exit
@@ -232,7 +232,7 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  python generate_compose.py --scenario scenarios/netheal/scenario.toml
+  python generate_compose.py --scenario scenarios/netheal/local_test.toml
   python generate_compose.py --scenario scenario.toml --output docker-compose.test.yml
         """,
     )

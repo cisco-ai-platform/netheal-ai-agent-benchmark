@@ -61,7 +61,7 @@ EOF
 ### 3. Generate Docker Compose
 
 ```bash
-python generate_compose.py --scenario scenarios/netheal/scenario.toml
+python generate_compose.py --scenario scenarios/netheal/local_test.toml
 ```
 
 ### 4. Run Assessment
@@ -99,8 +99,10 @@ Scenarios are defined in TOML format in `scenarios/netheal/`:
 
 | File | Solver | Description |
 |------|--------|-------------|
-| `scenario.toml` | GPT | Production configuration |
 | `local_test.toml` | Dummy | Validation without API keys |
+
+Note: the AgentBeats submission scenario lives in the leaderboard repo
+(`netheal-agentbeats-leaderboard/scenario.toml`).
 
 ### Configuration Options
 
