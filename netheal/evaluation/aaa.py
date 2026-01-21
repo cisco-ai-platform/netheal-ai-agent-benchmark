@@ -87,7 +87,7 @@ def build_aaa_payload(
 
 def _episode_to_result(episode: EpisodeMetrics) -> Dict[str, Any]:
     """Convert EpisodeMetrics to AgentBeats result format."""
-    return {
+    result = {
         "pass": episode.diagnosis_success,
         "pass_rate": 1.0 if episode.diagnosis_success else 0.0,
         "time_used": episode.wall_time_seconds,
@@ -104,6 +104,11 @@ def _episode_to_result(episode: EpisodeMetrics) -> Dict[str, Any]:
         "predicted_type": episode.predicted_type,
         "predicted_location": episode.predicted_location,
     }
+    if episode.episode_seed is not None:
+        result["episode_seed"] = episode.episode_seed
+    if episode.scenario_fingerprint:
+        result["scenario_fingerprint"] = episode.scenario_fingerprint
+    return result
 
 
 def dump_aaa_payload(payload: Dict[str, Any], path: str) -> None:

@@ -12,6 +12,8 @@ for benchmarks and competitions.
 from __future__ import annotations
 
 from typing import Any, Dict, Optional, Tuple
+import hashlib
+import json
 import time
 import numpy as np
 import gymnasium as gym
@@ -43,6 +45,7 @@ class MetricsCollectorWrapper(gym.Wrapper):
     # Gym API                                                            #
     # ------------------------------------------------------------------ #
     def reset(self, *args: Any, **kwargs: Any) -> Tuple[Any, Dict[str, Any]]:
+        seed = kwargs.get("seed")
         if self._trace and self._trace.end_time is None:
             # Episode was interrupted; finalize with best effort.
             self._finalize_trace(
@@ -53,7 +56,7 @@ class MetricsCollectorWrapper(gym.Wrapper):
             )
 
         observation, info = self.env.reset(*args, **kwargs)
-        self._start_new_trace(observation, info)
+        self._start_new_trace(observation, info, seed=seed)
         return observation, info
 
     def step(
@@ -127,7 +130,12 @@ class MetricsCollectorWrapper(gym.Wrapper):
     # ------------------------------------------------------------------ #
     # Internal utilities                                                 #
     # ------------------------------------------------------------------ #
-    def _start_new_trace(self, observation: Any, info: Dict[str, Any]) -> None:
+    def _start_new_trace(
+        self,
+        observation: Any,
+        info: Dict[str, Any],
+        seed: Optional[int] = None,
+    ) -> None:
         network_devices = []
         network_edges = []
         network_size = info.get("network_size", 0)
@@ -145,6 +153,10 @@ class MetricsCollectorWrapper(gym.Wrapper):
             if not network_size:
                 network_size = len(network_devices)
 
+        scenario_fingerprint = self._build_scenario_fingerprint(
+            network, info.get("ground_truth_fault")
+        )
+
         self._trace = EpisodeTrace(
             ground_truth=info.get("ground_truth_fault"),
             network_size=network_size,
@@ -152,6 +164,8 @@ class MetricsCollectorWrapper(gym.Wrapper):
             network_devices=network_devices,
             network_edges=network_edges,
             start_time=time.time(),
+            seed=seed,
+            scenario_fingerprint=scenario_fingerprint,
         )
         self._trace.final_observation = observation
         self._trace.final_info = info
@@ -217,6 +231,50 @@ class MetricsCollectorWrapper(gym.Wrapper):
                 self._trace.discovered_edges = int(np.count_nonzero(adjacency))
             except Exception:
                 self._trace.discovered_edges = 0
+
+    @staticmethod
+    def _build_scenario_fingerprint(
+        network: Any,
+        ground_truth: Optional[Dict[str, Any]],
+    ) -> Optional[str]:
+        if network is None:
+            return None
+
+        nodes = []
+        for device_id in sorted(network.get_all_devices()):
+            data = network.get_device_info(device_id)
+            device_type = data.get("device_type")
+            if hasattr(device_type, "value"):
+                device_type = device_type.value
+            nodes.append(
+                {
+                    "id": device_id,
+                    "type": device_type,
+                    "status": data.get("status"),
+                    "ip": data.get("ip_address"),
+                }
+            )
+
+        edges = []
+        for source, dest in sorted(network.get_all_connections()):
+            data = network.get_connection_info(source, dest)
+            edges.append(
+                {
+                    "source": source,
+                    "dest": dest,
+                    "status": data.get("status"),
+                    "bandwidth": round(float(data.get("bandwidth", 0.0)), 6),
+                    "latency": round(float(data.get("latency", 0.0)), 6),
+                }
+            )
+
+        payload = {
+            "nodes": nodes,
+            "edges": edges,
+            "ground_truth": ground_truth or {},
+        }
+        serialized = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+        return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
 
         metrics = compute_episode_metrics(self._trace)
         self._last_metrics = metrics

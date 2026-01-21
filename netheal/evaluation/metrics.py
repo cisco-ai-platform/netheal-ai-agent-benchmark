@@ -57,6 +57,8 @@ class EpisodeTrace:
     network_devices: List[str]
     network_edges: List[Tuple[str, str]]
     start_time: float
+    seed: Optional[int] = None
+    scenario_fingerprint: Optional[str] = None
     actions: List[ActionRecord] = field(default_factory=list)
     total_reward: float = 0.0
     final_observation: Optional[Dict[str, Any]] = None
@@ -109,6 +111,9 @@ class EpisodeMetrics:
     
     # Final composite score
     composite_episode_score: float
+    # Reproducibility metadata
+    episode_seed: Optional[int] = None
+    scenario_fingerprint: Optional[str] = None
 
 
 class CompetitionEvaluator:
@@ -228,6 +233,8 @@ def compute_episode_metrics(trace: EpisodeTrace) -> EpisodeMetrics:
         predicted_type=predicted_type,
         predicted_location=predicted_location,
         composite_episode_score=composite_score,
+        episode_seed=trace.seed,
+        scenario_fingerprint=trace.scenario_fingerprint,
     )
 
 
