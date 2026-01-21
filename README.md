@@ -493,6 +493,9 @@ summary = env.evaluator.compute_summary()
 payload = build_aaa_payload(env.evaluator, purple_agent_id="solver_v1")
 ```
 
+Per-episode results now include reproducibility metadata (`episode_seed` and
+`scenario_fingerprint`) so you can re-run or audit specific scenarios.
+
 See `tests/test_evaluation_metrics.py` for usage examples and regression tests.
 
 ### Training Integration

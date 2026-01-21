@@ -106,13 +106,18 @@ Scenarios are defined in TOML format in `scenarios/netheal/`:
 
 ```toml
 [config]
-num_episodes = 5              # Number of assessment episodes
+num_episodes = 100            # Number of assessment episodes
 max_devices = 8               # Maximum network devices per episode
 max_episode_steps = 25        # Tool call budget per episode
 topology_types = ["star", "mesh", "hierarchical"]
-timeout_seconds = 300         # Max wall-clock time
+timeout_seconds = 1200        # Max wall-clock time
 seed = 1234                   # Random seed for reproducibility
 enable_user_hints = true      # Provide natural language hints
+episode_concurrency = 8       # Run episodes in parallel
+episode_retry_limit = 10      # Retries per episode on timeout/error
+max_timeouts = 100            # Allow this many timeouts before failing
+max_errors = 10               # Allow this many errors before failing
+extra_env_options = { hint_provider_mode = "heuristic" }
 ```
 
 ## Assessment Metrics
@@ -124,6 +129,16 @@ enable_user_hints = true      # Provide natural language hints
 | `composite_episode_score` | Overall performance score |
 | `tool_cost_index` | Normalized diagnostic cost |
 | `topology_coverage` | Network exploration coverage |
+
+## Reproducibility Metadata
+
+Each per-episode result includes:
+
+- `episode_seed`: the exact seed used for that episode.
+- `scenario_fingerprint`: SHA256 of the starting network graph + ground truth.
+
+You can re-run a specific episode locally by setting `seed = <episode_seed>` and
+`num_episodes = 1` in your scenario.
 
 ## Building a Custom Solver
 
