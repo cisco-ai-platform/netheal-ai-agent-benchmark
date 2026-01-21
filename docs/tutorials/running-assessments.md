@@ -64,33 +64,17 @@ EOF
 python generate_compose.py --scenario scenarios/netheal/local_test.toml
 ```
 
-### 4. Run Assessment
+### 4. Run Assessment (AgentBeats-style)
 
 ```bash
 mkdir -p output
-docker compose -f docker-compose.generated.yml up -d
+docker compose -f docker-compose.generated.yml up --abort-on-container-exit
 ```
 
-### 5. Submit Task
+### 5. View Results
 
 ```bash
-curl -X POST http://localhost:9020/tasks \
-  -H "Content-Type: application/json" \
-  -d '{
-    "task_id": "assessment-001",
-    "participants": {
-      "purple": {
-        "role": "purple_agent",
-        "endpoint": "http://netheal-solver:9030"
-      }
-    }
-  }'
-```
-
-### 6. View Results
-
-```bash
-cat output/assessment_results.json | jq .summary
+cat output/results.json | jq .results[0].summary
 ```
 
 ## Scenario Configuration
@@ -156,12 +140,6 @@ See `netheal/aaa/purple_server.py` for a reference implementation.
 ## Monitoring
 
 ```bash
-# Check task status
-curl http://localhost:9020/tasks/{task_id} | jq .status
-
-# Stream real-time updates
-curl -N http://localhost:9020/tasks/{task_id}/stream
-
 # View logs
 docker compose -f docker-compose.generated.yml logs -f
 ```

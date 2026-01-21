@@ -5,7 +5,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 """
-Generate docker-compose.yml from AgentBeats scenario.toml.
+Generate docker-compose.yml and A2A scenario from AgentBeats scenario.toml.
 
 Converts a scenario definition into a docker-compose configuration
 for local testing of AgentBeats assessments.
@@ -15,7 +15,7 @@ Usage:
     python generate_compose.py --scenario scenarios/netheal/local_test.toml
     # Optional: create .env with your secrets
     mkdir -p output
-    docker compose up --abort-on-container-exit
+    docker compose -f docker-compose.generated.yml up --abort-on-container-exit
 
 Reference: https://docs.agentbeats.dev/tutorial/#running-the-scenario--submitting-the-results
 """
@@ -35,7 +35,8 @@ except ImportError:
 try:
     import tomli_w
 except ImportError:
-    tomli_w = None  # Optional for writing TOML
+    print("Error: tomli-w not installed. Run: pip install tomli-w")
+    sys.exit(1)
 
 
 def load_scenario(scenario_path: str) -> Dict[str, Any]:
@@ -129,15 +130,6 @@ def generate_compose(scenario: Dict[str, Any], output_path: str = "docker-compos
         "networks": ["netheal-network"],
     }
     
-    # Add config as environment variables
-    if config:
-        for key, value in config.items():
-            env_key = f"NETHEAL_{key.upper()}"
-            if isinstance(value, list):
-                services["green-agent"]["environment"][env_key] = ",".join(str(v) for v in value)
-            else:
-                services["green-agent"]["environment"][env_key] = str(value)
-    
     # Purple agent services (participants)
     port_offset = 0
     participant_endpoints = []
@@ -183,7 +175,25 @@ def generate_compose(scenario: Dict[str, Any], output_path: str = "docker-compos
         participant_endpoints.append({
             "name": participant.get("name", f"solver_{i}"),
             "endpoint": f"http://{service_name}:{purple_port}",
+            "agentbeats_id": participant.get("agentbeats_id"),
         })
+
+    # AgentBeats client (runs assessment like the hosted workflow)
+    services["agentbeats-client"] = {
+        "image": "ghcr.io/agentbeats/agentbeats-client:v1.0.0",
+        "platform": "linux/amd64",
+        "container_name": "agentbeats-client",
+        "volumes": [
+            "./a2a-scenario.toml:/app/scenario.toml",
+            "./output:/app/output",
+        ],
+        "command": ["scenario.toml", "output/results.json"],
+        "depends_on": {
+            "green-agent": {"condition": "service_healthy"},
+            **{name: {"condition": "service_healthy"} for name in services if name not in {"green-agent", "agentbeats-client"}},
+        },
+        "networks": ["netheal-network"],
+    }
     
     # Build final compose structure
     compose = {
@@ -215,6 +225,23 @@ def generate_compose(scenario: Dict[str, Any], output_path: str = "docker-compos
             f.write(f"#   {ep['name']}: {ep['endpoint']}\n")
         f.write("\n")
         yaml.dump(compose, f, default_flow_style=False, sort_keys=False)
+
+    # Write A2A scenario for agentbeats-client
+    a2a_lines = [
+        "[green_agent]",
+        "endpoint = \"http://green-agent:9020\"",
+        "",
+    ]
+    for ep in participant_endpoints:
+        a2a_lines.append("[[participants]]")
+        a2a_lines.append(f"role = \"{ep['name']}\"")
+        a2a_lines.append(f"endpoint = \"{ep['endpoint']}\"")
+        if ep.get("agentbeats_id"):
+            a2a_lines.append(f"agentbeats_id = \"{ep['agentbeats_id']}\"")
+        a2a_lines.append("")
+    a2a_lines.append(tomli_w.dumps({"config": config}).strip())
+    with open("a2a-scenario.toml", "w") as handle:
+        handle.write("\n".join(a2a_lines).strip() + "\n")
     
     print(f"Generated: {output_path}")
     print(f"\nParticipant endpoints:")
@@ -224,6 +251,7 @@ def generate_compose(scenario: Dict[str, Any], output_path: str = "docker-compos
     print(f"  # Optional: create .env with your secrets")
     print(f"  mkdir -p output")
     print(f"  docker compose -f {output_path} up --abort-on-container-exit")
+    print(f"  # Results will be written to output/results.json")
 
 
 def main():
