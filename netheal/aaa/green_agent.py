@@ -21,6 +21,7 @@ import asyncio
 import logging
 import os
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Awaitable, Callable, Dict, Optional, List
 
 import httpx
@@ -41,6 +42,7 @@ from netheal.environment.env import NetworkTroubleshootingEnv
 from netheal.evaluation.aaa import build_aaa_payload
 from netheal.evaluation.metrics import CompetitionEvaluator, EpisodeMetrics
 from netheal.evaluation.wrapper import MetricsCollectorWrapper
+from netheal.scenario import create_env_from_snapshot, load_snapshot_episodes
 
 LOGGER = logging.getLogger(__name__)
 
@@ -72,6 +74,7 @@ class NetHealGreenAgent:
         self.evaluator = CompetitionEvaluator()
         self._task_id = assessment.task_id or "netheal-task"
         self._update_cb: Optional[UpdateCallback] = None
+        self._snapshots: Optional[List[Dict[str, Any]]] = None
 
     async def run(
         self,
@@ -88,6 +91,8 @@ class NetHealGreenAgent:
             message="Starting NetHeal assessment.",
             payload={"config": self.config.model_dump()},
         )
+
+        self._load_snapshots_if_needed()
 
         episode_results: Dict[int, EpisodeOutcome] = {}
         concurrency = max(1, min(self.config.episode_concurrency, self.config.num_episodes))
@@ -206,24 +211,32 @@ class NetHealGreenAgent:
         Creates the environment and MCP server, notifies purple agents,
         waits for diagnosis submission, and collects metrics.
         """
-        env = NetworkTroubleshootingEnv(
-            min_devices=self.config.min_devices,
-            max_devices=self.config.max_devices,
-            max_episode_steps=self.config.max_episode_steps,
-            topology_types=self.config.topology_types,
-            reward_scaling_factor=self.config.reward_scaling_factor,
-            enable_user_hints=self.config.enable_user_hints,
-            fault_sampling_strategy=self.config.fault_sampling_strategy,
-            fault_weights=self.config.fault_weights or None,
-            latency_multiplier_range=self._parse_latency_range(
-                self.config.latency_multiplier_range
-            ) or (10.0, 20.0),
-            **self.config.extra_env_options,
-        )
-        wrapped = MetricsCollectorWrapper(env, evaluator=self.evaluator)
+        snapshot = self._snapshot_for_episode(episode_index)
+        if snapshot:
+            env = create_env_from_snapshot(snapshot)
+            wrapped = MetricsCollectorWrapper(env, evaluator=self.evaluator)
+            observation = env.observation.to_dict()
+            info = env._get_info()
+            wrapped._start_new_trace(observation, info, seed=snapshot.get("seed"))
+        else:
+            env = NetworkTroubleshootingEnv(
+                min_devices=self.config.min_devices,
+                max_devices=self.config.max_devices,
+                max_episode_steps=self.config.max_episode_steps,
+                topology_types=self.config.topology_types,
+                reward_scaling_factor=self.config.reward_scaling_factor,
+                enable_user_hints=self.config.enable_user_hints,
+                fault_sampling_strategy=self.config.fault_sampling_strategy,
+                fault_weights=self.config.fault_weights or None,
+                latency_multiplier_range=self._parse_latency_range(
+                    self.config.latency_multiplier_range
+                ) or (10.0, 20.0),
+                **self.config.extra_env_options,
+            )
+            wrapped = MetricsCollectorWrapper(env, evaluator=self.evaluator)
+            seed = self._seed_for_episode(episode_index)
+            observation, info = wrapped.reset(seed=seed)
 
-        seed = self._seed_for_episode(episode_index)
-        observation, info = wrapped.reset(seed=seed)
         runtime = EpisodeRuntime(env=wrapped, observation=observation, info=info)
 
         # Support Docker networking: bind to 0.0.0.0, advertise with container hostname
@@ -256,12 +269,20 @@ class NetHealGreenAgent:
 
         # Build episode_start WITH ground_truth for dashboard visualization
         episode_start_for_dashboard = self._build_episode_start(
-            episode_index, runtime, mcp_server, include_ground_truth=True
+            episode_index,
+            runtime,
+            mcp_server,
+            include_ground_truth=True,
+            seed_override=snapshot.get("seed") if snapshot else None,
         )
         
         # Build episode_start WITHOUT ground_truth for purple agent (no leakage!)
         episode_start_for_solver = self._build_episode_start(
-            episode_index, runtime, mcp_server, include_ground_truth=False
+            episode_index,
+            runtime,
+            mcp_server,
+            include_ground_truth=False,
+            seed_override=snapshot.get("seed") if snapshot else None,
         )
 
         await self._emit_update(
@@ -467,6 +488,7 @@ class NetHealGreenAgent:
         runtime: EpisodeRuntime,
         server: NetHealMCPServer,
         include_ground_truth: bool = False,
+        seed_override: Optional[int] = None,
     ) -> EpisodeStart:
         """Construct the EpisodeStart message.
         
@@ -494,7 +516,7 @@ class NetHealGreenAgent:
             mcp_server_url=server.http_helper_url,
             hint=info.get("user_hint"),
             network_size=info.get("network_size"),
-            seed=self._seed_for_episode(episode_index),
+            seed=seed_override if seed_override is not None else self._seed_for_episode(episode_index),
             max_steps=self.config.max_episode_steps,
             task_description=(
                 "Diagnose the network fault. The simulated network has an injected fault "
@@ -514,6 +536,31 @@ class NetHealGreenAgent:
         if self.config.seed is None:
             return None
         return self.config.seed + episode_index
+
+    def _load_snapshots_if_needed(self) -> None:
+        if not self.config.use_snapshots:
+            return
+        if self._snapshots is not None:
+            return
+        if self.config.snapshot_url:
+            raise RuntimeError("snapshot_url is not supported yet; use snapshot_path.")
+        if not self.config.snapshot_path:
+            raise RuntimeError("snapshot_path is required when use_snapshots is true.")
+
+        snapshot_path = Path(self.config.snapshot_path)
+        if not snapshot_path.is_absolute():
+            snapshot_path = Path.cwd() / snapshot_path
+        self._snapshots = load_snapshot_episodes(snapshot_path)
+        if not self._snapshots:
+            raise RuntimeError(f"No snapshots found in {snapshot_path}")
+
+    def _snapshot_for_episode(self, episode_index: int) -> Optional[Dict[str, Any]]:
+        if not self.config.use_snapshots:
+            return None
+        self._load_snapshots_if_needed()
+        if not self._snapshots:
+            return None
+        return self._snapshots[episode_index % len(self._snapshots)]
 
     @staticmethod
     def _parse_latency_range(

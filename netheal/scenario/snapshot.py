@@ -170,8 +170,27 @@ def load_snapshot_episodes(path: Path) -> List[Dict[str, Any]]:
     snapshots: List[Dict[str, Any]] = []
 
     if path.is_dir():
+        manifest_path = path / "manifest.json"
+        if manifest_path.exists():
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            snapshot_ids = manifest.get("snapshots") or []
+            for snapshot_id in snapshot_ids:
+                file_path = path / f"{snapshot_id}.json"
+                if file_path.exists():
+                    snapshots.append(_load_snapshot_file(file_path))
+            return snapshots
+
+        episodes_path = path / "episodes.jsonl"
+        if episodes_path.exists():
+            return load_snapshot_episodes(episodes_path)
+
         for file_path in sorted(path.glob("*.json")):
-            snapshots.append(_load_snapshot_file(file_path))
+            if file_path.name == "manifest.json":
+                continue
+            try:
+                snapshots.append(_load_snapshot_file(file_path))
+            except ValueError:
+                continue
         return snapshots
 
     if path.suffix.lower() == ".jsonl":

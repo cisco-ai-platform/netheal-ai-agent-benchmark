@@ -92,6 +92,18 @@ class AssessmentConfig(BaseModel):
         ge=0.1,
         description="Scaling factor for sparse rewards.",
     )
+    use_snapshots: bool = Field(
+        default=False,
+        description="Use pre-generated snapshots instead of random episodes.",
+    )
+    snapshot_path: Optional[str] = Field(
+        default=None,
+        description="Path to snapshot directory or JSONL file.",
+    )
+    snapshot_url: Optional[str] = Field(
+        default=None,
+        description="URL to snapshot archive (not yet supported).",
+    )
     fault_sampling_strategy: str = Field(
         default="uniform",
         description="Fault sampling strategy (uniform, weighted, round_robin, stratified).",
