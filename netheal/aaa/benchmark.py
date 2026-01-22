@@ -211,11 +211,11 @@ async def run_single_episode(
                     result.diagnosis_correct = metrics.diagnosis_success
                     result.total_reward = metrics.total_reward
 
-                    if hasattr(wrapped, '_action_history') and wrapped._action_history:
-                        last_action = wrapped._action_history[-1]
-                        if hasattr(last_action, 'parameters'):
-                            result.submitted_fault_type = last_action.parameters.get('fault_type')
-                            result.submitted_location = last_action.parameters.get('location')
+                    trace = wrapped.last_episode_trace
+                    if trace and trace.actions:
+                        last_action = trace.actions[-1]
+                        result.submitted_fault_type = last_action.action_type
+                        result.submitted_location = (last_action.parameters or {}).get('location')
 
         finally:
             server.stop()

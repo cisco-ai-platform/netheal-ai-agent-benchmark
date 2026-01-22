@@ -66,7 +66,7 @@ This document describes how each fault type manifests during a NetHeal episode, 
 
 ## 4. PERFORMANCE_DEGRADATION
 
-**What happens:** A connection's latency is multiplied by 2-10x (bidirectional)
+**What happens:** A connection's latency is multiplied by 10-20x (bidirectional)
 
 **Location format:** Connection string (e.g., `"device_0->device_1"`)
 
@@ -77,7 +77,7 @@ This document describes how each fault type manifests during a NetHeal episode, 
 - **All connectivity works** → Just slower
 
 **Diagnostic clues:**
-- Pings succeed but latency is 2-10x higher than normal (normal is ~0.5-5ms)
+- Pings succeed but latency is 10-20x higher than normal (normal is ~0.5-5ms)
 - Traceroute reveals which hop has the latency spike
 - No failures, just slowness
 - Interface check shows the high latency value
@@ -91,7 +91,7 @@ This document describes how each fault type manifests during a NetHeal episode, 
 | **DEVICE_FAILURE** | `device_X` | DOWN | N/A | Fails | `check_status` shows down |
 | **LINK_FAILURE** | `A->B` | Both UP | DOWN | Fails (no route) | `check_interfaces` shows down interface |
 | **MISCONFIGURATION** | `device_X` | UP | One direction DOWN | Selective failures | Interface check shows one down interface |
-| **PERFORMANCE_DEGRADATION** | `A->B` | Both UP | UP | **Succeeds** with high latency | Latency 2-10x normal |
+| **PERFORMANCE_DEGRADATION** | `A->B` | Both UP | UP | **Succeeds** with high latency | Latency 10-20x normal |
 
 ---
 

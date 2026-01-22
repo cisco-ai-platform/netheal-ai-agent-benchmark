@@ -21,7 +21,7 @@ import asyncio
 import logging
 import os
 from dataclasses import dataclass
-from typing import Any, Awaitable, Callable, Dict, Optional
+from typing import Any, Awaitable, Callable, Dict, Optional, List
 
 import httpx
 
@@ -213,6 +213,11 @@ class NetHealGreenAgent:
             topology_types=self.config.topology_types,
             reward_scaling_factor=self.config.reward_scaling_factor,
             enable_user_hints=self.config.enable_user_hints,
+            fault_sampling_strategy=self.config.fault_sampling_strategy,
+            fault_weights=self.config.fault_weights or None,
+            latency_multiplier_range=self._parse_latency_range(
+                self.config.latency_multiplier_range
+            ) or (10.0, 20.0),
             **self.config.extra_env_options,
         )
         wrapped = MetricsCollectorWrapper(env, evaluator=self.evaluator)
@@ -279,7 +284,16 @@ class NetHealGreenAgent:
                     level=TaskUpdateLevel.WARNING,
                     payload={"episode_index": episode_index},
                 )
-                return EpisodeOutcome(metrics=None, timed_out=True)
+                try:
+                    wrapped._finalize_trace(
+                        final_observation=runtime.observation,
+                        final_info=runtime.info or {},
+                        terminated=False,
+                        truncated=True,
+                    )
+                except Exception:
+                    pass
+                return EpisodeOutcome(metrics=wrapped.last_episode_metrics, timed_out=True)
 
             await self._emit_update(
                 message="Episode completed.",
@@ -500,6 +514,14 @@ class NetHealGreenAgent:
         if self.config.seed is None:
             return None
         return self.config.seed + episode_index
+
+    @staticmethod
+    def _parse_latency_range(
+        value: Optional[List[float]],
+    ) -> Optional[tuple[float, float]]:
+        if not value or len(value) < 2:
+            return None
+        return (float(value[0]), float(value[1]))
 
     def _build_final_payload(self) -> Dict[str, Any]:
         purple_agent_id = self._purple_agent_identifier()

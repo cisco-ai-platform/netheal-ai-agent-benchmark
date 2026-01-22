@@ -206,6 +206,11 @@ class NetHealMCPServer:
         )
         async def tool_submit_diagnosis(fault_type: str, location: str) -> Dict[str, Any]:
             if self._diagnosis_submitted:
+                self._record_tool_error(
+                    "submit_diagnosis",
+                    "Diagnosis already submitted.",
+                    {"fault_type": fault_type, "location": location},
+                )
                 return _tool_error(
                     code="diagnosis_already_submitted",
                     message="Diagnosis already submitted.",
@@ -217,6 +222,11 @@ class NetHealMCPServer:
                 fault_enum = FaultType(fault_type)
             except ValueError:
                 valid = [ft.value for ft in FaultType]
+                self._record_tool_error(
+                    "submit_diagnosis",
+                    f"Invalid fault_type '{fault_type}'.",
+                    {"fault_type": fault_type, "location": location},
+                )
                 return _tool_error(
                     code="invalid_fault_type",
                     message=f"Invalid fault_type '{fault_type}'.",
@@ -362,6 +372,11 @@ class NetHealMCPServer:
         async def http_discover_neighbors(request: Request) -> JSONResponse:
             device = request.query_params.get("device", "")
             if not device:
+                self._record_tool_error(
+                    "discover_neighbors",
+                    "Missing required parameter: device.",
+                    {"device": device},
+                )
                 return JSONResponse(
                     _tool_error(
                         code="invalid_params",
@@ -385,6 +400,11 @@ class NetHealMCPServer:
             source = request.query_params.get("source", "")
             destination = request.query_params.get("destination", "")
             if not source or not destination:
+                self._record_tool_error(
+                    "ping",
+                    "Missing required parameters: source, destination.",
+                    {"source": source, "destination": destination},
+                )
                 return JSONResponse(
                     _tool_error(
                         code="invalid_params",
@@ -401,6 +421,11 @@ class NetHealMCPServer:
             source = request.query_params.get("source", "")
             destination = request.query_params.get("destination", "")
             if not source or not destination:
+                self._record_tool_error(
+                    "traceroute",
+                    "Missing required parameters: source, destination.",
+                    {"source": source, "destination": destination},
+                )
                 return JSONResponse(
                     _tool_error(
                         code="invalid_params",
@@ -416,6 +441,11 @@ class NetHealMCPServer:
         async def http_check_status(request: Request) -> JSONResponse:
             device = request.query_params.get("device", "")
             if not device:
+                self._record_tool_error(
+                    "check_status",
+                    "Missing required parameter: device.",
+                    {"device": device},
+                )
                 return JSONResponse(
                     _tool_error(
                         code="invalid_params",
@@ -438,6 +468,11 @@ class NetHealMCPServer:
         async def http_check_interfaces(request: Request) -> JSONResponse:
             device = request.query_params.get("device", "")
             if not device:
+                self._record_tool_error(
+                    "check_interfaces",
+                    "Missing required parameter: device.",
+                    {"device": device},
+                )
                 return JSONResponse(
                     _tool_error(
                         code="invalid_params",
@@ -467,6 +502,11 @@ class NetHealMCPServer:
                 location = request.query_params.get("location", "")
 
             if self._diagnosis_submitted:
+                self._record_tool_error(
+                    "submit_diagnosis",
+                    "Diagnosis already submitted.",
+                    {"fault_type": fault_type, "location": location},
+                )
                 return JSONResponse(
                     _tool_error(
                         code="diagnosis_already_submitted",
@@ -480,6 +520,11 @@ class NetHealMCPServer:
                 fault_enum = FaultType(fault_type)
             except ValueError:
                 valid = [ft.value for ft in FaultType]
+                self._record_tool_error(
+                    "submit_diagnosis",
+                    f"Invalid fault_type '{fault_type}'.",
+                    {"fault_type": fault_type, "location": location},
+                )
                 return JSONResponse(
                     _tool_error(
                         code="invalid_fault_type",
@@ -490,6 +535,11 @@ class NetHealMCPServer:
                     )
                 )
             if not location:
+                self._record_tool_error(
+                    "submit_diagnosis",
+                    "Missing required parameter: location.",
+                    {"fault_type": fault_type, "location": location},
+                )
                 return JSONResponse(
                     _tool_error(
                         code="invalid_params",
@@ -560,6 +610,7 @@ class NetHealMCPServer:
             if 0 <= idx < len(specs) and predicate(specs[idx]):
                 return await self._step_env(idx, tool_name=tool_name, tool_params=tool_params)
 
+        self._record_tool_error(tool_name or "unknown", error_message, tool_params)
         return _tool_error(
             code="action_not_available",
             message=error_message,
@@ -567,6 +618,16 @@ class NetHealMCPServer:
             tool_params=tool_params,
             hint="Call list_actions to see valid actions.",
         )
+
+    def _record_tool_error(
+        self,
+        tool_name: str,
+        message: str,
+        tool_params: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        env = self.runtime.env
+        if hasattr(env, "record_tool_error"):
+            env.record_tool_error(tool_name, message, tool_params)
 
     async def _diagnostic_action(
         self,

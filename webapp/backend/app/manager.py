@@ -16,6 +16,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import threading
 import time
 import numpy as np
+from gymnasium import spaces
 
 from netheal import NetworkTroubleshootingEnv
 from netheal.environment.actions import ActionSpec
@@ -228,6 +229,17 @@ class EnvManager(metaclass=_Singleton):
             self._import_network(scenario_data.get('network', {}))
             self._import_fault(scenario_data.get('fault', {}))
             self._import_observation(scenario_data.get('observation', {}))
+
+            # Rebuild action space for imported device IDs
+            if self._env.network:
+                try:
+                    device_ids = list(self._env.network.get_all_devices())
+                    self._env.action_space_manager.rebuild_for_network(device_ids)
+                    self._env.action_space = spaces.Discrete(
+                        self._env.action_space_manager.total_actions
+                    )
+                except Exception:
+                    pass
             
             # Restore episode state
             episode_state = scenario_data.get('episode_state', {})

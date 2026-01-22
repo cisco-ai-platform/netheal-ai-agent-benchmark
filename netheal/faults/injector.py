@@ -47,6 +47,15 @@ class FaultInfo:
         return f"FaultInfo({self.fault_type}, {self.location}, {self.details})"
 
 
+class FaultSamplingStrategy(Enum):
+    """Strategies for selecting fault types."""
+
+    UNIFORM = "uniform"
+    WEIGHTED = "weighted"
+    ROUND_ROBIN = "round_robin"
+    STRATIFIED = "stratified"
+
+
 class FaultInjector:
     """
     Fault injection system for network graphs.
@@ -55,7 +64,14 @@ class FaultInjector:
     to create troubleshooting scenarios for RL training.
     """
     
-    def __init__(self, network: NetworkGraph, rng: Optional[random.Random] = None):
+    def __init__(
+        self,
+        network: NetworkGraph,
+        rng: Optional[random.Random] = None,
+        sampling_strategy: FaultSamplingStrategy = FaultSamplingStrategy.UNIFORM,
+        fault_weights: Optional[Dict[Any, float]] = None,
+        latency_multiplier_range: Tuple[float, float] = (10.0, 20.0),
+    ):
         """
         Initialize fault injector.
         
@@ -65,6 +81,14 @@ class FaultInjector:
         self.network = network
         self.rng = rng or random
         self.active_faults: List[FaultInfo] = []
+        self.sampling_strategy = (
+            sampling_strategy
+            if isinstance(sampling_strategy, FaultSamplingStrategy)
+            else FaultSamplingStrategy(str(sampling_strategy))
+        )
+        self.fault_weights = self._normalize_fault_weights(fault_weights)
+        self.latency_multiplier_range = latency_multiplier_range
+        self._round_robin_index = 0
         
     def inject_random_fault(self, fault_types: List[FaultType] = None) -> FaultInfo:
         """
@@ -79,7 +103,7 @@ class FaultInjector:
         if fault_types is None:
             fault_types = list(FaultType)
             
-        fault_type = self.rng.choice(fault_types)
+        fault_type = self._select_fault_type(fault_types)
         
         if fault_type == FaultType.LINK_FAILURE:
             return self.inject_link_failure()
@@ -224,8 +248,12 @@ class FaultInjector:
         
         return fault_info
     
-    def inject_performance_degradation(self, source: str = None, destination: str = None,
-                                     latency_multiplier: float = None) -> FaultInfo:
+    def inject_performance_degradation(
+        self,
+        source: str = None,
+        destination: str = None,
+        latency_multiplier: float = None,
+    ) -> FaultInfo:
         """
         Inject performance degradation by increasing latency on a connection.
         
@@ -250,7 +278,8 @@ class FaultInjector:
             source, destination = self.rng.choice(up_connections)
         
         if latency_multiplier is None:
-            latency_multiplier = self.rng.uniform(10.0, 20.0)  # 10x to 20x increase
+            min_mult, max_mult = self.latency_multiplier_range
+            latency_multiplier = self.rng.uniform(min_mult, max_mult)
         
         # Get current latency and increase it
         current_info = self.network.get_connection_info(source, destination)
@@ -277,6 +306,54 @@ class FaultInjector:
         self.active_faults.append(fault_info)
         
         return fault_info
+
+    def _select_fault_type(self, fault_types: List[FaultType]) -> FaultType:
+        if not fault_types:
+            raise ValueError("No fault types available for injection")
+
+        if self.sampling_strategy == FaultSamplingStrategy.UNIFORM:
+            return self.rng.choice(fault_types)
+
+        if self.sampling_strategy == FaultSamplingStrategy.WEIGHTED:
+            weights = [self.fault_weights.get(ft, 1.0) for ft in fault_types]
+            if sum(weights) <= 0:
+                weights = [1.0] * len(fault_types)
+            return self.rng.choices(fault_types, weights=weights, k=1)[0]
+
+        if self.sampling_strategy == FaultSamplingStrategy.ROUND_ROBIN:
+            idx = self._round_robin_index % len(fault_types)
+            self._round_robin_index += 1
+            return fault_types[idx]
+
+        if self.sampling_strategy == FaultSamplingStrategy.STRATIFIED:
+            return self._select_stratified_fault(fault_types)
+
+        return self.rng.choice(fault_types)
+
+    def _select_stratified_fault(self, fault_types: List[FaultType]) -> FaultType:
+        """Select a fault type based on network size buckets."""
+        size = len(self.network.get_all_devices()) if self.network else 0
+        if size <= 5:
+            preferred = [FaultType.DEVICE_FAILURE, FaultType.MISCONFIGURATION]
+        elif size <= 10:
+            preferred = [FaultType.LINK_FAILURE, FaultType.MISCONFIGURATION]
+        else:
+            preferred = [FaultType.LINK_FAILURE, FaultType.PERFORMANCE_DEGRADATION]
+
+        candidates = [ft for ft in fault_types if ft in preferred]
+        return self.rng.choice(candidates or fault_types)
+
+    @staticmethod
+    def _normalize_fault_weights(
+        fault_weights: Optional[Dict[Any, float]]
+    ) -> Dict[FaultType, float]:
+        if not fault_weights:
+            return {}
+        normalized: Dict[FaultType, float] = {}
+        for key, value in fault_weights.items():
+            fault_type = key if isinstance(key, FaultType) else FaultType(str(key))
+            normalized[fault_type] = float(value)
+        return normalized
     
     def clear_all_faults(self) -> None:
         """Clear all active faults and restore network to healthy state."""

@@ -67,6 +67,7 @@ class EpisodeTrace:
     termination_reason: Optional[str] = None
     discovered_nodes: int = 0
     discovered_edges: int = 0
+    tool_error_count: int = 0
 
 
 @dataclass
@@ -87,6 +88,8 @@ class EpisodeMetrics:
     # Tool usage
     tool_cost: float
     tool_cost_normalized: float
+    tool_error_count: int
+    tool_error_rate: float
     
     # Exploration (for analysis)
     topology_coverage: float
@@ -153,9 +156,11 @@ class CompetitionEvaluator:
         avg_composite = _weighted_avg([m.composite_episode_score for m in self.episodes])
         avg_wall_time = sum(m.wall_time_seconds for m in self.episodes) / len(self.episodes)
         avg_redundancy = _weighted_avg([m.redundancy_rate for m in self.episodes])
+        avg_tool_error_rate = _weighted_avg([m.tool_error_rate for m in self.episodes])
 
         confusion = _build_confusion_matrix(self.episodes)
         macro_f1 = _macro_f1(confusion)
+        per_fault_type = _per_fault_type_summary(self.episodes)
 
         summary = {
             "episodes": len(self.episodes),
@@ -166,11 +171,13 @@ class CompetitionEvaluator:
             "normalized_steps": avg_normalized_steps,
             "composite_episode_score": avg_composite,
             "tool_cost_index": avg_tool_cost,
+            "tool_error_rate": avg_tool_error_rate,
             "topology_coverage": avg_topology_coverage,
             "evidence_sufficiency": avg_evidence,
             "redundancy_rate": avg_redundancy,
             "avg_wall_time_seconds": avg_wall_time,
             "confusion_matrix": confusion,
+            "per_fault_type": per_fault_type,
         }
 
         return summary
@@ -188,6 +195,8 @@ def compute_episode_metrics(trace: EpisodeTrace) -> EpisodeMetrics:
     tool_cost_normalized = min(
         1.0, _safe_divide(tool_cost, max(1, steps) * MAX_TOOL_COST_PER_STEP)
     )
+    tool_error_count = trace.tool_error_count
+    tool_error_rate = _safe_divide(tool_error_count, tool_error_count + steps)
 
     node_coverage = _safe_divide(trace.discovered_nodes, max(1, trace.network_size))
     edge_coverage = _safe_divide(trace.discovered_edges, max(1, len(trace.network_edges)))
@@ -221,6 +230,8 @@ def compute_episode_metrics(trace: EpisodeTrace) -> EpisodeMetrics:
         total_reward=total_reward,
         tool_cost=tool_cost,
         tool_cost_normalized=tool_cost_normalized,
+        tool_error_count=tool_error_count,
+        tool_error_rate=tool_error_rate,
         topology_coverage=topology_coverage,
         node_coverage=node_coverage,
         edge_coverage=edge_coverage,
@@ -378,7 +389,7 @@ def _macro_f1(confusion: Dict[str, Dict[str, int]]) -> float:
     for label in labels:
         tp = confusion.get(label, {}).get(label, 0)
         fp = sum(confusion.get(other, {}).get(label, 0) for other in labels if other != label)
-        fn = sum(confusion.get(label, {}).get(other, 0) for other in labels if other != label)
+        fn = sum(v for k, v in confusion.get(label, {}).items() if k != label)
         precision = _safe_divide(tp, tp + fp)
         recall = _safe_divide(tp, tp + fn)
         if precision + recall == 0:
@@ -386,6 +397,32 @@ def _macro_f1(confusion: Dict[str, Dict[str, int]]) -> float:
         else:
             scores.append(2 * precision * recall / (precision + recall))
     return sum(scores) / len(labels)
+
+
+def _per_fault_type_summary(episodes: List[EpisodeMetrics]) -> Dict[str, Dict[str, float]]:
+    summary: Dict[str, Dict[str, float]] = {}
+    for fault_type in FAULT_TYPE_ORDER:
+        subset = [m for m in episodes if m.ground_truth_type == fault_type]
+        if not subset:
+            continue
+        success_rate = sum(1 for m in subset if m.diagnosis_success) / len(subset)
+        avg_steps = sum(m.steps for m in subset) / len(subset)
+        location_accuracy = sum(1 for m in subset if _location_matches(m)) / len(subset)
+        summary[fault_type] = {
+            "episodes": len(subset),
+            "success_rate": success_rate,
+            "avg_steps": avg_steps,
+            "location_accuracy": location_accuracy,
+        }
+    return summary
+
+
+def _location_matches(metrics: EpisodeMetrics) -> bool:
+    if not metrics.ground_truth_location or not metrics.predicted_location:
+        return False
+    if metrics.ground_truth_type in {"link_failure", "performance_degradation"}:
+        return _link_locations_match(metrics.predicted_location, metrics.ground_truth_location)
+    return metrics.predicted_location == metrics.ground_truth_location
 
 
 def _safe_divide(numerator: float, denominator: float) -> float:

@@ -4,6 +4,6 @@
 
 """Fault injection system for network troubleshooting simulation."""
 
-from .injector import FaultInjector, FaultType
+from .injector import FaultInjector, FaultType, FaultSamplingStrategy
 
-__all__ = ["FaultInjector", "FaultType"]
+__all__ = ["FaultInjector", "FaultType", "FaultSamplingStrategy"]

@@ -92,6 +92,18 @@ class AssessmentConfig(BaseModel):
         ge=0.1,
         description="Scaling factor for sparse rewards.",
     )
+    fault_sampling_strategy: str = Field(
+        default="uniform",
+        description="Fault sampling strategy (uniform, weighted, round_robin, stratified).",
+    )
+    fault_weights: Dict[str, float] = Field(
+        default_factory=dict,
+        description="Weights for fault types when using weighted sampling.",
+    )
+    latency_multiplier_range: Optional[List[float]] = Field(
+        default=None,
+        description="Latency multiplier range for performance degradation faults.",
+    )
     extra_env_options: Dict[str, Any] = Field(
         default_factory=dict,
         description="Additional environment kwargs.",

@@ -18,7 +18,7 @@ import time
 
 from ..network.graph import NetworkGraph, DeviceType
 from ..network.topology import TopologyGenerator
-from ..faults.injector import FaultInjector, FaultType, FaultInfo
+from ..faults.injector import FaultInjector, FaultType, FaultInfo, FaultSamplingStrategy
 from ..tools.simulator import ToolSimulator, ToolResult
 from netheal.environment.observation import StructuredObservation, DiagnosticResult, DeviceStatus, ConnectionStatus
 from netheal.environment.actions import StructuredActionSpace, ActionSpec, ActionCategory, TopologyAction, DiagnosticAction
@@ -55,6 +55,9 @@ class NetworkTroubleshootingEnv(gym.Env):
                  max_episode_steps: int = 100,
                  topology_types: List[str] = None,
                  fault_types: List[FaultType] = None,
+                 fault_sampling_strategy: FaultSamplingStrategy = FaultSamplingStrategy.UNIFORM,
+                 fault_weights: Optional[Dict[Any, float]] = None,
+                 latency_multiplier_range: Tuple[float, float] = (10.0, 20.0),
                  reward_scaling_factor: float = 10.0,
                  render_mode: Optional[str] = None,
                  enable_user_hints: bool = True,
@@ -83,6 +86,9 @@ class NetworkTroubleshootingEnv(gym.Env):
         self.max_episode_steps = max_episode_steps
         self.topology_types = topology_types or ["linear", "star", "mesh", "hierarchical", "random"]
         self.fault_types = fault_types or list(FaultType)
+        self.fault_sampling_strategy = fault_sampling_strategy
+        self.fault_weights = fault_weights
+        self.latency_multiplier_range = latency_multiplier_range
         
         # Environment state
         self.network: Optional[NetworkGraph] = None
@@ -176,7 +182,13 @@ class NetworkTroubleshootingEnv(gym.Env):
             self._setup_action_space()
         
         # Initialize components
-        self.fault_injector = FaultInjector(self.network, rng=self._rng)
+        self.fault_injector = FaultInjector(
+            self.network,
+            rng=self._rng,
+            sampling_strategy=self.fault_sampling_strategy,
+            fault_weights=self.fault_weights,
+            latency_multiplier_range=self.latency_multiplier_range,
+        )
         self.tool_simulator = ToolSimulator(self.network, rng=self._rng)
         
         # Inject a random fault

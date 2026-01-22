@@ -97,6 +97,17 @@ class MetricsCollectorWrapper(gym.Wrapper):
         """Return the trace for the most recently completed episode."""
         return self._last_trace
 
+    def record_tool_error(
+        self,
+        tool_name: str,
+        message: str,
+        tool_params: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        """Record an invalid tool call for metrics accounting."""
+        if self._trace is None:
+            return
+        self._trace.tool_error_count += 1
+
     @property
     def action_specs(self):
         """Pass-through to underlying environment's action specs.
@@ -232,6 +243,12 @@ class MetricsCollectorWrapper(gym.Wrapper):
             except Exception:
                 self._trace.discovered_edges = 0
 
+        metrics = compute_episode_metrics(self._trace)
+        self._last_metrics = metrics
+        self._last_trace = self._trace
+        self.evaluator.add_episode_metrics(metrics)
+        self._trace = None
+
     @staticmethod
     def _build_scenario_fingerprint(
         network: Any,
@@ -275,12 +292,6 @@ class MetricsCollectorWrapper(gym.Wrapper):
         }
         serialized = json.dumps(payload, sort_keys=True, separators=(",", ":"))
         return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
-
-        metrics = compute_episode_metrics(self._trace)
-        self._last_metrics = metrics
-        self._last_trace = self._trace
-        self.evaluator.add_episode_metrics(metrics)
-        self._trace = None
 
 
 __all__ = ["MetricsCollectorWrapper"]
