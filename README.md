@@ -65,22 +65,36 @@ source venv/bin/activate  # On Windows: venv\Scripts\activate
 
 2. **Install dependencies:**
 ```bash
+# Core dependencies only
 pip install -r requirements.txt
+
+# With LLM support (Azure OpenAI, OpenAI, Anthropic, Bedrock)
+pip install -r requirements.txt -r requirements-llm.txt
+
+# For development/testing
+pip install -r requirements.txt -r requirements-dev.txt
 ```
 
 ### Dependencies
+
+**Core** (`requirements.txt`):
 - `networkx>=3.1` - Network graph representation
 - `gymnasium>=0.29.0` - RL environment interface
 - `numpy>=1.24.0` - Numerical computations
-- `matplotlib>=3.7.0` - Visualization (optional)
-- `pytest>=7.4.0` - Testing framework
-- `openai>=1.30.0` - Optional, for Azure/OpenAI powered user hints
-- `anthropic>=0.37.0` - Optional, for Anthropic powered user hints
-- `boto3>=1.34.0` - Optional, for Bedrock powered user hints
+- `matplotlib>=3.7.0` - Visualization
 - `fastapi>=0.111.0` - Web API and A2A server
 - `uvicorn>=0.30.0` - ASGI server
 - `mcp>=1.0.0` - MCP protocol support
 - `typer>=0.12.3` - CLI framework
+
+**LLM Providers** (`requirements-llm.txt`, optional):
+- `openai>=1.30.0` - Azure OpenAI / OpenAI
+- `anthropic>=0.37.0` - Anthropic Claude
+- `boto3>=1.34.0` - AWS Bedrock
+
+**Development** (`requirements-dev.txt`):
+- `pytest>=7.4.0` - Testing framework
+- `pytest-cov>=4.1.0` - Coverage reporting
 
 ## Quick Start
 

@@ -1,0 +1,14 @@
+# LLM provider dependencies (optional)
+# Install with: pip install -r requirements.txt -r requirements-llm.txt
+
+# OpenAI / Azure OpenAI
+openai>=1.30.0
+
+# Anthropic
+anthropic>=0.37.0
+
+# AWS Bedrock
+boto3>=1.34.0
+
+# Observability (optional)
+weave>=0.50.0

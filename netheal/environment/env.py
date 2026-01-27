@@ -10,11 +10,14 @@ the OpenAI Gymnasium interface with graph-aware observations and structured acti
 
 import gymnasium as gym
 from gymnasium import spaces
+import logging
 import numpy as np
 import random
 from typing import Dict, List, Tuple, Optional, Any, Union
 from enum import Enum
 import time
+
+logger = logging.getLogger(__name__)
 
 from ..network.graph import NetworkGraph, DeviceType
 from ..network.topology import TopologyGenerator
@@ -221,8 +224,9 @@ class NetworkTroubleshootingEnv(gym.Env):
                     'user_context': self.user_context,
                 }
                 self.user_hint = provider.generate_hint(context)
-            except Exception:
-                # Be resilient; hints are advisory
+            except Exception as e:
+                # Be resilient; hints are advisory. Log for debugging.
+                logger.warning("Hint generation failed: %s", e)
                 self.user_hint = None
         
         # Get initial observation
