@@ -32,6 +32,10 @@ logging.basicConfig(
 )
 LOGGER = logging.getLogger("netheal.aaa.cli")
 
+# Suppress noisy loggers for cleaner CI output
+logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
+logging.getLogger("httpx").setLevel(logging.WARNING)
+
 
 def serve(
     host: str = typer.Option(
@@ -70,10 +74,12 @@ def serve(
 
     server_module.set_card_url(card_url)
 
-    LOGGER.info("Starting NetHeal green agent A2A server")
-    LOGGER.info("  Host: %s", host)
-    LOGGER.info("  Port: %d", port)
-    LOGGER.info("  Card URL: %s", card_url)
+    LOGGER.info("=" * 50)
+    LOGGER.info("NetHeal Green Agent A2A Server")
+    LOGGER.info("=" * 50)
+    LOGGER.info("Host: %s", host)
+    LOGGER.info("Port: %d", port)
+    LOGGER.info("Card URL: %s", card_url)
 
     hint_provider = _resolve_llm_provider("auto")
     if hint_provider:
