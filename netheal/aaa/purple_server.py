@@ -48,6 +48,10 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
 )
 
+# Suppress noisy loggers for cleaner CI output
+logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
+logging.getLogger("httpx").setLevel(logging.WARNING)
+
 app = FastAPI(title="NetHeal Purple Agent", version="0.1.0")
 app.add_middleware(
     CORSMiddleware,
@@ -486,11 +490,13 @@ def serve(
     effective_card_url = card_url or f"http://{host}:{port}"
     set_config(effective_card_url, solver)
 
-    LOGGER.info("Starting NetHeal purple agent A2A server")
-    LOGGER.info("  Host: %s", host)
-    LOGGER.info("  Port: %d", port)
-    LOGGER.info("  Card URL: %s", effective_card_url)
-    LOGGER.info("  Solver: %s", solver)
+    LOGGER.info("=" * 50)
+    LOGGER.info("NetHeal Purple Agent A2A Server")
+    LOGGER.info("=" * 50)
+    LOGGER.info("Host: %s", host)
+    LOGGER.info("Port: %d", port)
+    LOGGER.info("Card URL: %s", effective_card_url)
+    LOGGER.info("Solver: %s", solver)
 
     uvicorn.run(app, host=host, port=port, log_level=log_level)
 

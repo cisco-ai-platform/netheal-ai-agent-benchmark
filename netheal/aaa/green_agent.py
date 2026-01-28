@@ -20,11 +20,13 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Dict, Optional, List
 
 import httpx
+from tqdm import tqdm
 
 from netheal.aaa.mcp_server import EpisodeRuntime, NetHealMCPServer
 from netheal.aaa.schemas import (
@@ -101,31 +103,68 @@ class NetHealGreenAgent:
             payload={"episode_concurrency": concurrency},
         )
 
-        if concurrency == 1:
-            for episode_idx in range(self.config.num_episodes):
-                await self._emit_update(
-                    message=f"Preparing episode {episode_idx + 1}/{self.config.num_episodes}",
-                    payload={"episode_index": episode_idx},
-                )
-                result = await self._run_episode_with_retries(episode_idx)
-                episode_results[episode_idx] = result
-        else:
-            semaphore = asyncio.Semaphore(concurrency)
+        # Progress tracking counters
+        completed_count = 0
+        success_count = 0
+        timeout_count = 0
+        error_count = 0
 
-            async def run_episode(episode_idx: int) -> None:
-                async with semaphore:
+        # Create progress bar for CI-friendly output
+        progress_bar = tqdm(
+            total=self.config.num_episodes,
+            desc="Episodes",
+            unit="ep",
+            file=sys.stderr,
+            ncols=80,
+            bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}]",
+        )
+
+        async def update_progress(outcome: EpisodeOutcome) -> None:
+            """Update progress bar and counters after episode completion."""
+            nonlocal completed_count, success_count, timeout_count, error_count
+            completed_count += 1
+            if outcome.metrics and outcome.metrics.diagnosis_success:
+                success_count += 1
+            if outcome.timed_out:
+                timeout_count += 1
+            if outcome.error:
+                error_count += 1
+            progress_bar.update(1)
+            progress_bar.set_postfix({
+                "ok": success_count,
+                "fail": completed_count - success_count,
+            })
+
+        try:
+            if concurrency == 1:
+                for episode_idx in range(self.config.num_episodes):
                     await self._emit_update(
                         message=f"Preparing episode {episode_idx + 1}/{self.config.num_episodes}",
                         payload={"episode_index": episode_idx},
                     )
                     result = await self._run_episode_with_retries(episode_idx)
                     episode_results[episode_idx] = result
+                    await update_progress(result)
+            else:
+                semaphore = asyncio.Semaphore(concurrency)
 
-            tasks = [
-                asyncio.create_task(run_episode(episode_idx))
-                for episode_idx in range(self.config.num_episodes)
-            ]
-            await asyncio.gather(*tasks)
+                async def run_episode(episode_idx: int) -> None:
+                    async with semaphore:
+                        await self._emit_update(
+                            message=f"Preparing episode {episode_idx + 1}/{self.config.num_episodes}",
+                            payload={"episode_index": episode_idx},
+                        )
+                        result = await self._run_episode_with_retries(episode_idx)
+                        episode_results[episode_idx] = result
+                        await update_progress(result)
+
+                tasks = [
+                    asyncio.create_task(run_episode(episode_idx))
+                    for episode_idx in range(self.config.num_episodes)
+                ]
+                await asyncio.gather(*tasks)
+        finally:
+            progress_bar.close()
 
         payload = self._build_final_payload()
         artifacts = [
@@ -142,6 +181,23 @@ class NetHealGreenAgent:
             "retries_used": sum(max(0, o.attempts - 1) for o in episode_results.values()),
             "episodes_retried": sum(1 for o in episode_results.values() if o.attempts > 1),
         }
+
+        # Print formatted summary to stderr for CI visibility
+        ep_summary = summary["episodes"]
+        print("\n" + "=" * 60, file=sys.stderr)
+        print("ASSESSMENT SUMMARY", file=sys.stderr)
+        print("=" * 60, file=sys.stderr)
+        print(f"Episodes:    {self.config.num_episodes}", file=sys.stderr)
+        print(f"Successful:  {ep_summary.get('successes', 0)}", file=sys.stderr)
+        print(f"Failed:      {ep_summary.get('failures', 0)}", file=sys.stderr)
+        print(f"Timeouts:    {summary['timeouts']}", file=sys.stderr)
+        print(f"Errors:      {len(summary['errors'])}", file=sys.stderr)
+        print(f"Retries:     {summary['retries_used']}", file=sys.stderr)
+        if "success_rate" in ep_summary:
+            print(f"Success Rate: {ep_summary['success_rate']:.1%}", file=sys.stderr)
+        if "mean_composite_score" in ep_summary:
+            print(f"Mean Score:   {ep_summary['mean_composite_score']:.3f}", file=sys.stderr)
+        print("=" * 60, file=sys.stderr)
 
         def _exceeds_limit(
             count: int, limit: Optional[int], fail_on_any: bool

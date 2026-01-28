@@ -60,6 +60,11 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
 )
 
+# Suppress noisy loggers by default for cleaner CI output
+logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("mcp.client.streamable_http").setLevel(logging.WARNING)
+
 SYSTEM_PROMPT = """You are an AI agent that completes tasks using available tools.
 
 Instructions:
@@ -204,10 +209,11 @@ class GPTAgent:
         }
 
         if os.environ.get("MCP_DEBUG"):
+            # Enable debug for MCP but suppress noisy SSE message logs
             logging.getLogger("mcp").setLevel(logging.DEBUG)
-            logging.getLogger("mcp.client").setLevel(logging.DEBUG)
-            logging.getLogger("mcp.client.streamable_http").setLevel(logging.DEBUG)
-            logging.getLogger("httpx").setLevel(logging.INFO)
+            logging.getLogger("mcp.client").setLevel(logging.INFO)  # Reduce noise
+            logging.getLogger("mcp.client.streamable_http").setLevel(logging.WARNING)  # Very noisy
+            logging.getLogger("httpx").setLevel(logging.WARNING)
 
         env_path = Path(__file__).parents[2] / ".env"
         if env_path.exists():
