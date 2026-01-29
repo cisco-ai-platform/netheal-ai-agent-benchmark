@@ -157,6 +157,7 @@ class MetricsCollectorWrapper(gym.Wrapper):
         observation: Any,
         info: Dict[str, Any],
         seed: Optional[int] = None,
+        snapshot_id: Optional[str] = None,
     ) -> None:
         network_devices = []
         network_edges = []
@@ -188,6 +189,7 @@ class MetricsCollectorWrapper(gym.Wrapper):
             start_time=time.time(),
             seed=seed,
             scenario_fingerprint=scenario_fingerprint,
+            snapshot_id=snapshot_id,
         )
         self._trace.final_observation = observation
         self._trace.final_info = info

@@ -59,6 +59,7 @@ class EpisodeOutcome:
     timed_out: bool = False
     error: Optional[str] = None
     attempts: int = 1
+    snapshot_id: Optional[str] = None  # Track which episode failed
 
 
 class NetHealGreenAgent:
@@ -174,10 +175,22 @@ class NetHealGreenAgent:
                 data=payload,
             )
         ]
+        # Collect failed episode info
+        timed_out_episodes = [
+            {"index": idx, "snapshot_id": o.snapshot_id}
+            for idx, o in episode_results.items() if o.timed_out
+        ]
+        error_episodes = [
+            {"index": idx, "snapshot_id": o.snapshot_id, "error": o.error}
+            for idx, o in episode_results.items() if o.error
+        ]
+
         summary = {
             "episodes": self.evaluator.compute_summary(),
-            "timeouts": sum(1 for outcome in episode_results.values() if outcome.timed_out),
-            "errors": [o.error for o in episode_results.values() if o.error],
+            "timeouts": len(timed_out_episodes),
+            "timed_out_episodes": timed_out_episodes,
+            "errors": [e["error"] for e in error_episodes],
+            "error_episodes": error_episodes,
             "retries_used": sum(max(0, o.attempts - 1) for o in episode_results.values()),
             "episodes_retried": sum(1 for o in episode_results.values() if o.attempts > 1),
         }
@@ -197,6 +210,21 @@ class NetHealGreenAgent:
             print(f"Success Rate: {ep_summary['success_rate']:.1%}", file=sys.stderr)
         if "mean_composite_score" in ep_summary:
             print(f"Mean Score:   {ep_summary['mean_composite_score']:.3f}", file=sys.stderr)
+
+        # Print failed episode details
+        if timed_out_episodes:
+            print("-" * 60, file=sys.stderr)
+            print("TIMED OUT EPISODES:", file=sys.stderr)
+            for ep in timed_out_episodes:
+                sid = ep["snapshot_id"] or "N/A"
+                print(f"  Episode {ep['index']}: snapshot={sid}", file=sys.stderr)
+        if error_episodes:
+            print("-" * 60, file=sys.stderr)
+            print("ERROR EPISODES:", file=sys.stderr)
+            for ep in error_episodes:
+                sid = ep["snapshot_id"] or "N/A"
+                err = ep["error"][:50] if ep["error"] else "Unknown"
+                print(f"  Episode {ep['index']}: snapshot={sid} error={err}", file=sys.stderr)
         print("=" * 60, file=sys.stderr)
 
         def _exceeds_limit(
@@ -283,7 +311,11 @@ class NetHealGreenAgent:
             )
             observation = env.observation.to_dict()
             info = env._get_info()
-            wrapped._start_new_trace(observation, info, seed=snapshot.get("seed"))
+            wrapped._start_new_trace(
+                observation, info,
+                seed=snapshot.get("seed"),
+                snapshot_id=snapshot.get("snapshot_id"),
+            )
         else:
             env = NetworkTroubleshootingEnv(
                 min_devices=self.config.min_devices,
@@ -330,11 +362,14 @@ class NetHealGreenAgent:
             log_level=mcp_log_level,
             on_tool_call=on_tool_call,
         )
+        # Get snapshot_id for tracking failures
+        current_snapshot_id = snapshot.get("snapshot_id") if snapshot else None
+
         try:
             mcp_server.start()
         except Exception as exc:
             LOGGER.exception("Failed to start MCP server: %s", exc)
-            return EpisodeOutcome(metrics=None, error=str(exc))
+            return EpisodeOutcome(metrics=None, error=str(exc), snapshot_id=current_snapshot_id)
 
         # Build episode_start WITH ground_truth for dashboard visualization
         episode_start_for_dashboard = self._build_episode_start(
@@ -372,7 +407,7 @@ class NetHealGreenAgent:
                 await self._emit_update(
                     message="Episode timed out waiting for solver diagnosis.",
                     level=TaskUpdateLevel.WARNING,
-                    payload={"episode_index": episode_index},
+                    payload={"episode_index": episode_index, "snapshot_id": current_snapshot_id},
                 )
                 try:
                     wrapped._finalize_trace(
@@ -383,12 +418,17 @@ class NetHealGreenAgent:
                     )
                 except Exception:
                     pass
-                return EpisodeOutcome(metrics=wrapped.last_episode_metrics, timed_out=True)
+                return EpisodeOutcome(
+                    metrics=wrapped.last_episode_metrics,
+                    timed_out=True,
+                    snapshot_id=current_snapshot_id,
+                )
 
             await self._emit_update(
                 message="Episode completed.",
                 payload={
                     "episode_index": episode_index,
+                    "snapshot_id": current_snapshot_id,
                     "metrics": {
                         "diagnosis_success": metrics.diagnosis_success,
                         "steps": metrics.steps,
@@ -397,15 +437,15 @@ class NetHealGreenAgent:
                     },
                 },
             )
-            return EpisodeOutcome(metrics=metrics)
+            return EpisodeOutcome(metrics=metrics, snapshot_id=current_snapshot_id)
         except Exception as exc:
             LOGGER.exception("Episode %s encountered an error: %s", episode_index, exc)
             await self._emit_update(
                 message="Episode failed.",
                 level=TaskUpdateLevel.ERROR,
-                payload={"episode_index": episode_index, "error": str(exc)},
+                payload={"episode_index": episode_index, "snapshot_id": current_snapshot_id, "error": str(exc)},
             )
-            return EpisodeOutcome(metrics=None, error=str(exc))
+            return EpisodeOutcome(metrics=None, error=str(exc), snapshot_id=current_snapshot_id)
         finally:
             mcp_server.stop()
             wrapped.env.close()
@@ -655,11 +695,21 @@ class NetHealGreenAgent:
             "task_id": self._task_id,
             "config": self.config.model_dump(),
         }
+        # Extract snapshot version from path (e.g., "snapshots/v1/" -> "v1")
+        snapshot_version = None
+        if self.config.use_snapshots and self.config.snapshot_path:
+            path_parts = Path(self.config.snapshot_path).parts
+            # Look for version-like part (e.g., "v1", "v2")
+            for part in reversed(path_parts):
+                if part and part != "snapshots":
+                    snapshot_version = part
+                    break
         return build_aaa_payload(
             evaluator=self.evaluator,
             purple_agent_id=purple_agent_id,
             green_agent_name="netheal_green_mcp_v1",
             metadata=metadata,
+            snapshot_version=snapshot_version,
         )
 
     def _purple_agent_identifier(self) -> str:

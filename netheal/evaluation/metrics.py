@@ -59,6 +59,7 @@ class EpisodeTrace:
     start_time: float
     seed: Optional[int] = None
     scenario_fingerprint: Optional[str] = None
+    snapshot_id: Optional[str] = None  # UUID of snapshot file used
     actions: List[ActionRecord] = field(default_factory=list)
     total_reward: float = 0.0
     final_observation: Optional[Dict[str, Any]] = None
@@ -125,6 +126,7 @@ class EpisodeMetrics:
     # Reproducibility metadata
     episode_seed: Optional[int] = None
     scenario_fingerprint: Optional[str] = None
+    snapshot_id: Optional[str] = None  # UUID of snapshot file used
 
 
 class CompetitionEvaluator:
@@ -277,6 +279,7 @@ def compute_episode_metrics(trace: EpisodeTrace) -> EpisodeMetrics:
         cost_efficiency=cost_efficiency,
         episode_seed=trace.seed,
         scenario_fingerprint=trace.scenario_fingerprint,
+        snapshot_id=trace.snapshot_id,
     )
 
 

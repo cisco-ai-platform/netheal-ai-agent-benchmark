@@ -23,6 +23,7 @@ def build_aaa_payload(
     purple_agent_id: str,
     green_agent_name: str = "netheal_green_v1",
     metadata: Optional[Dict[str, Any]] = None,
+    snapshot_version: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Build a JSON-serializable payload for AgentBeats leaderboards.
@@ -82,6 +83,7 @@ def build_aaa_payload(
         "metrics": summary,
         # Metadata
         "generated_at": timestamp,
+        "snapshot_version": snapshot_version,
         "metadata": metadata or {},
     }
 
@@ -114,6 +116,8 @@ def _episode_to_result(episode: EpisodeMetrics) -> Dict[str, Any]:
         result["episode_seed"] = episode.episode_seed
     if episode.scenario_fingerprint:
         result["scenario_fingerprint"] = episode.scenario_fingerprint
+    if episode.snapshot_id:
+        result["snapshot_id"] = episode.snapshot_id
     return result
 
 
