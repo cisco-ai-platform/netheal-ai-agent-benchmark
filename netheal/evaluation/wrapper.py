@@ -34,12 +34,14 @@ class MetricsCollectorWrapper(gym.Wrapper):
         self,
         env: gym.Env,
         evaluator: Optional[CompetitionEvaluator] = None,
+        skip_evaluator: bool = False,
     ) -> None:
         super().__init__(env)
         self.evaluator = evaluator or CompetitionEvaluator()
         self._trace: Optional[EpisodeTrace] = None
         self._last_metrics: Optional[EpisodeMetrics] = None
         self._last_trace: Optional[EpisodeTrace] = None
+        self._skip_evaluator = skip_evaluator
 
     # ------------------------------------------------------------------ #
     # Gym API                                                            #
@@ -80,6 +82,7 @@ class MetricsCollectorWrapper(gym.Wrapper):
                 final_info=info,
                 terminated=terminated,
                 truncated=truncated,
+                skip_evaluator=self._skip_evaluator,
             )
 
         return observation, reward, terminated, truncated, info
@@ -96,6 +99,14 @@ class MetricsCollectorWrapper(gym.Wrapper):
     def last_episode_trace(self) -> Optional[EpisodeTrace]:
         """Return the trace for the most recently completed episode."""
         return self._last_trace
+
+    def add_metrics_to_evaluator(self) -> None:
+        """Manually add the last episode metrics to the evaluator.
+
+        Use this when skip_evaluator=True to add metrics after retries complete.
+        """
+        if self._last_metrics is not None:
+            self.evaluator.add_episode_metrics(self._last_metrics)
 
     def record_tool_error(
         self,
@@ -220,6 +231,7 @@ class MetricsCollectorWrapper(gym.Wrapper):
         final_info: Dict[str, Any],
         terminated: bool,
         truncated: bool,
+        skip_evaluator: bool = False,
     ) -> None:
         if self._trace is None:
             return
@@ -246,7 +258,8 @@ class MetricsCollectorWrapper(gym.Wrapper):
         metrics = compute_episode_metrics(self._trace)
         self._last_metrics = metrics
         self._last_trace = self._trace
-        self.evaluator.add_episode_metrics(metrics)
+        if not skip_evaluator:
+            self.evaluator.add_episode_metrics(metrics)
         self._trace = None
 
     @staticmethod

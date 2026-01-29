@@ -256,9 +256,16 @@ class NetHealGreenAgent:
             last_outcome = outcome
 
             if not outcome.timed_out and not outcome.error:
+                # Success: add final metrics to evaluator
+                if outcome.metrics is not None:
+                    self.evaluator.add_episode_metrics(outcome.metrics)
                 return outcome
 
-        return last_outcome or EpisodeOutcome(metrics=None, error="Episode failed to run.")
+        # All retries exhausted: add final attempt's metrics to evaluator
+        final_outcome = last_outcome or EpisodeOutcome(metrics=None, error="Episode failed to run.")
+        if final_outcome.metrics is not None:
+            self.evaluator.add_episode_metrics(final_outcome.metrics)
+        return final_outcome
 
     async def _run_single_episode(self, episode_index: int) -> EpisodeOutcome:
         """
@@ -270,7 +277,10 @@ class NetHealGreenAgent:
         snapshot = self._snapshot_for_episode(episode_index)
         if snapshot:
             env = create_env_from_snapshot(snapshot)
-            wrapped = MetricsCollectorWrapper(env, evaluator=self.evaluator)
+            # skip_evaluator=True: metrics added after retries complete
+            wrapped = MetricsCollectorWrapper(
+                env, evaluator=self.evaluator, skip_evaluator=True
+            )
             observation = env.observation.to_dict()
             info = env._get_info()
             wrapped._start_new_trace(observation, info, seed=snapshot.get("seed"))
@@ -289,7 +299,10 @@ class NetHealGreenAgent:
                 ) or (10.0, 20.0),
                 **self.config.extra_env_options,
             )
-            wrapped = MetricsCollectorWrapper(env, evaluator=self.evaluator)
+            # skip_evaluator=True: metrics added after retries complete
+            wrapped = MetricsCollectorWrapper(
+                env, evaluator=self.evaluator, skip_evaluator=True
+            )
             seed = self._seed_for_episode(episode_index)
             observation, info = wrapped.reset(seed=seed)
 
