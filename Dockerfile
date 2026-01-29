@@ -19,8 +19,8 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+COPY requirements.txt requirements-llm.txt ./
+RUN pip install --no-cache-dir -r requirements.txt -r requirements-llm.txt
 
 COPY netheal/ ./netheal/
 COPY scenarios/ ./scenarios/
