@@ -623,6 +623,16 @@ class NetHealGreenAgent:
         if not self._snapshots:
             raise RuntimeError(f"No snapshots found in {snapshot_path}")
 
+        # Auto-detect num_episodes from snapshot count
+        snapshot_count = len(self._snapshots)
+        if self.config.num_episodes != snapshot_count:
+            LOGGER.info(
+                "Overriding num_episodes=%d with snapshot count=%d",
+                self.config.num_episodes,
+                snapshot_count,
+            )
+            self.config.num_episodes = snapshot_count
+
     def _snapshot_for_episode(self, episode_index: int) -> Optional[Dict[str, Any]]:
         if not self.config.use_snapshots:
             return None
