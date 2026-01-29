@@ -251,7 +251,8 @@ class MetricsCollectorWrapper(gym.Wrapper):
                 self._trace.discovered_nodes = 0
             try:
                 adjacency = np.asarray(discovery_matrix.adjacency)
-                self._trace.discovered_edges = int(np.count_nonzero(adjacency))
+                # Count only upper triangle to avoid double-counting symmetric edges
+                self._trace.discovered_edges = int(np.count_nonzero(np.triu(adjacency)))
             except Exception:
                 self._trace.discovered_edges = 0
 

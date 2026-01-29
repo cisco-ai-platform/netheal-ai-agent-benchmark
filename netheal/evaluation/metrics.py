@@ -76,44 +76,52 @@ class EpisodeMetrics:
 
     # Primary outcome
     diagnosis_success: bool
-    
+
     # Episode context
     network_size: int
     steps: int
     normalized_steps: float  # steps / max_episode_steps
-    
+
     # Reward (useful for RL training)
     total_reward: float
-    
+
     # Tool usage
     tool_cost: float
     tool_cost_normalized: float
     tool_error_count: int
     tool_error_rate: float
-    
+
     # Exploration (for analysis)
     topology_coverage: float
     node_coverage: float
     edge_coverage: float
-    
+
     # Investigation quality (for analysis)
     evidence_sufficiency: float
-    
+
     # Redundancy (for debugging)
     redundancy_count: int
     redundancy_rate: float
-    
+
     # Wall clock time (for reference)
     wall_time_seconds: float
-    
+
     # Ground truth and prediction (for confusion matrix)
     ground_truth_type: Optional[str]
     ground_truth_location: Optional[str]
     predicted_type: Optional[str]
     predicted_location: Optional[str]
-    
+
     # Final composite score
     composite_episode_score: float
+
+    # Partial credit metrics
+    location_correct: bool  # Location matched (for analysis)
+
+    # Efficiency metrics
+    steps_per_device: float  # steps / network_size (complexity-adjusted)
+    cost_efficiency: float   # success / (1 + tool_cost_normalized)
+
     # Reproducibility metadata
     episode_seed: Optional[int] = None
     scenario_fingerprint: Optional[str] = None
@@ -158,6 +166,13 @@ class CompetitionEvaluator:
         avg_redundancy = _weighted_avg([m.redundancy_rate for m in self.episodes])
         avg_tool_error_rate = _weighted_avg([m.tool_error_rate for m in self.episodes])
 
+        # Partial credit and efficiency metrics
+        location_accuracy = _weighted_avg(
+            [1.0 if m.location_correct else 0.0 for m in self.episodes]
+        )
+        avg_steps_per_device = _weighted_avg([m.steps_per_device for m in self.episodes])
+        avg_cost_efficiency = _weighted_avg([m.cost_efficiency for m in self.episodes])
+
         confusion = _build_confusion_matrix(self.episodes)
         macro_f1 = _macro_f1(confusion)
         per_fault_type = _per_fault_type_summary(self.episodes)
@@ -166,7 +181,9 @@ class CompetitionEvaluator:
             "episodes": len(self.episodes),
             "diagnosis_success_rate": diagnosis_success_rate,
             "fault_type_macro_f1": macro_f1,
+            "location_accuracy": location_accuracy,
             "avg_steps": avg_steps,
+            "avg_steps_per_device": avg_steps_per_device,
             "avg_total_reward": avg_total_reward,
             "normalized_steps": avg_normalized_steps,
             "composite_episode_score": avg_composite,
@@ -175,6 +192,7 @@ class CompetitionEvaluator:
             "topology_coverage": avg_topology_coverage,
             "evidence_sufficiency": avg_evidence,
             "redundancy_rate": avg_redundancy,
+            "cost_efficiency": avg_cost_efficiency,
             "avg_wall_time_seconds": avg_wall_time,
             "confusion_matrix": confusion,
             "per_fault_type": per_fault_type,
@@ -219,6 +237,16 @@ def compute_episode_metrics(trace: EpisodeTrace) -> EpisodeMetrics:
         predicted_type, predicted_location, trace.ground_truth, trace.final_info
     )
 
+    # Partial credit metrics
+    location_correct = _location_matches_raw(
+        predicted_location, ground_truth_location, ground_truth_type
+    )
+
+    # Efficiency metrics (complexity-adjusted)
+    steps_per_device = _safe_divide(steps, max(1, trace.network_size))
+    success_val = 1.0 if diagnosis_success else 0.0
+    cost_efficiency = success_val / (1.0 + tool_cost_normalized)
+
     # Composite score favors the environment reward; step penalties are already included.
     composite_score = total_reward
 
@@ -244,6 +272,9 @@ def compute_episode_metrics(trace: EpisodeTrace) -> EpisodeMetrics:
         predicted_type=predicted_type,
         predicted_location=predicted_location,
         composite_episode_score=composite_score,
+        location_correct=location_correct,
+        steps_per_device=steps_per_device,
+        cost_efficiency=cost_efficiency,
         episode_seed=trace.seed,
         scenario_fingerprint=trace.scenario_fingerprint,
     )
@@ -423,6 +454,19 @@ def _location_matches(metrics: EpisodeMetrics) -> bool:
     if metrics.ground_truth_type in {"link_failure", "performance_degradation"}:
         return _link_locations_match(metrics.predicted_location, metrics.ground_truth_location)
     return metrics.predicted_location == metrics.ground_truth_location
+
+
+def _location_matches_raw(
+    predicted_location: Optional[str],
+    ground_truth_location: Optional[str],
+    ground_truth_type: Optional[str],
+) -> bool:
+    """Check if location matches (raw string version for compute_episode_metrics)."""
+    if not predicted_location or not ground_truth_location:
+        return False
+    if ground_truth_type in {"link_failure", "performance_degradation"}:
+        return _link_locations_match(predicted_location, ground_truth_location)
+    return predicted_location == ground_truth_location
 
 
 def _safe_divide(numerator: float, denominator: float) -> float:

@@ -152,6 +152,9 @@ def test_competition_evaluator_summary():
             predicted_type="device_failure",
             predicted_location="device_a",
             composite_episode_score=0.9,
+            location_correct=True,
+            steps_per_device=1.0,
+            cost_efficiency=0.83,
         )
     )
     evaluator.add_episode_metrics(
@@ -177,6 +180,9 @@ def test_competition_evaluator_summary():
             predicted_type="device_failure",
             predicted_location="device_c",
             composite_episode_score=0.2,
+            location_correct=False,
+            steps_per_device=2.0,
+            cost_efficiency=0.0,
         )
     )
 
@@ -194,6 +200,12 @@ class DummyNetwork:
 
     def get_all_connections(self):
         return [("device_a", "device_b"), ("device_b", "device_a")]
+
+    def get_device_info(self, device_id):
+        return {"device_type": "router", "status": "up", "ip_address": "192.168.1.1"}
+
+    def get_connection_info(self, source, dest):
+        return {"status": "up", "latency": 10, "bandwidth": 100}
 
 
 class DummyDiscoveryMatrix:
