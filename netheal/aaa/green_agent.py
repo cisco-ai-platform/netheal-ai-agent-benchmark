@@ -663,11 +663,17 @@ class NetHealGreenAgent:
         if not self._snapshots:
             raise RuntimeError(f"No snapshots found in {snapshot_path}")
 
-        # Auto-detect num_episodes from snapshot count
+        # Auto-detect num_episodes from snapshot count if enabled
         snapshot_count = len(self._snapshots)
-        if self.config.num_episodes != snapshot_count:
+        if self.config.auto_detect_num_episodes:
             LOGGER.info(
-                "Overriding num_episodes=%d with snapshot count=%d",
+                "Auto-detecting num_episodes from snapshot count: %d",
+                snapshot_count,
+            )
+            self.config.num_episodes = snapshot_count
+        elif self.config.num_episodes > snapshot_count:
+            LOGGER.warning(
+                "num_episodes=%d exceeds snapshot count=%d, capping to snapshot count",
                 self.config.num_episodes,
                 snapshot_count,
             )

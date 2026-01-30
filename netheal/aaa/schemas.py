@@ -96,6 +96,10 @@ class AssessmentConfig(BaseModel):
         default=False,
         description="Use pre-generated snapshots instead of random episodes.",
     )
+    auto_detect_num_episodes: bool = Field(
+        default=True,
+        description="Auto-detect num_episodes from snapshot count when use_snapshots=true.",
+    )
     snapshot_path: Optional[str] = Field(
         default=None,
         description="Path to snapshot directory or JSONL file.",
