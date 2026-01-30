@@ -104,7 +104,20 @@ episode_retry_limit = 10      # Retries per episode on timeout/error
 max_timeouts = 100            # Allow this many timeouts before failing
 max_errors = 10               # Allow this many errors before failing
 extra_env_options = { hint_provider_mode = "heuristic" }
+
+# Snapshot mode for reproducible assessments
+use_snapshots = true          # Use pre-generated snapshots instead of random episodes
+snapshot_path = "snapshots/v1/"  # Path to snapshot directory
+auto_detect_num_episodes = true  # Auto-detect num_episodes from snapshot count
+                                 # Set to false to use explicit num_episodes value
 ```
+
+### Snapshot Mode
+
+When `use_snapshots = true`, episodes are replayed from pre-generated snapshots for reproducibility. This ensures all agents are evaluated on identical scenarios.
+
+- `auto_detect_num_episodes = true` (default): Automatically sets `num_episodes` to match the snapshot count
+- `auto_detect_num_episodes = false`: Uses the explicit `num_episodes` value (useful for testing subsets)
 
 ## Assessment Metrics
 
